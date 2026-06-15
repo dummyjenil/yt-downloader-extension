@@ -26,6 +26,13 @@
   "manifest": {
     "host_permissions": [
       "https://*/*"
+    ],
+    "permissions": [
+      "declarativeNetRequest",
+      "declarativeNetRequestWithHostAccess",
+      "activeTab",
+      "tabs",
+      "downloads"
     ]
   }
 }
