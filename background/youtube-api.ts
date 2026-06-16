@@ -2,7 +2,7 @@ import { setDNRHeadersForClient } from "./dnr";
 
 export async function fetchVisitorData(videoId: string): Promise<string> {
   const apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
-  const url = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false`;
+  const url = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false&ext_request=true`;
 
   await setDNRHeadersForClient("WEB");
 
@@ -97,7 +97,7 @@ export async function fetchVideoInfo(videoId: string) {
       console.log(`Attempting fetch using client: ${config.name}`);
       await setDNRHeadersForClient(config.name);
 
-      const url = `https://www.youtube.com/youtubei/v1/player?key=${config.apiKey}&prettyPrint=false`;
+      const url = `https://www.youtube.com/youtubei/v1/player?key=${config.apiKey}&prettyPrint=false&ext_request=true`;
       const payload = {
         videoId: videoId,
         contentCheckOk: true,

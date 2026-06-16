@@ -67,13 +67,13 @@ export default function DownloadPage() {
       // 2. Determine size if not present
       let totalSize = params.totalSize;
       if (!totalSize) {
-        const headResponse = await fetch(params.url, { method: "HEAD" }).catch(() => null);
+        const headResponse = await fetch(`${params.url}&ext_download=true`, { method: "HEAD" }).catch(() => null);
         const headSize = headResponse?.headers.get("content-length");
         if (headSize) {
           totalSize = parseInt(headSize, 10);
         } else {
           // Fallback chunk 0-0 range request
-          const rangeResponse = await fetch(`${params.url}&range=0-0`);
+          const rangeResponse = await fetch(`${params.url}&range=0-0&ext_download=true`);
           const rangeHeader = rangeResponse.headers.get("content-range");
           if (rangeHeader) {
             totalSize = parseInt(rangeHeader.split("/")[1], 10);
@@ -109,7 +109,7 @@ export default function DownloadPage() {
         const start = i * CHUNK_SIZE;
         const end = Math.min((i + 1) * CHUNK_SIZE, totalSize) - 1;
 
-        const chunkUrl = `${params.url}&range=${start}-${end}`;
+        const chunkUrl = `${params.url}&range=${start}-${end}&ext_download=true`;
         let response = await fetch(chunkUrl);
         
         if (!response.ok) {

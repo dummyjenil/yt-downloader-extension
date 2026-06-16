@@ -15,8 +15,26 @@ chrome.runtime.onStartup.addListener(() => {
   setDNRHeadersForClient("ANDROID_VR").catch(console.error);
 });
 
+// Broadcast message to both the extension pages (popup) and all tabs (YouTube content script overlays)
+function broadcastToAll(message: any) {
+  chrome.runtime.sendMessage(message).catch(() => {});
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+      }
+    }
+  });
+}
+
 // Listener for popup and tab messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "OPEN_DOWNLOAD_TAB") {
+    chrome.tabs.create({ url: message.url });
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (message.type === "GET_VIDEO_INFO") {
     const videoId = message.videoId;
     fetchVideoInfo(videoId)
@@ -36,11 +54,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((err) => {
         console.error("Chunked download failed:", err);
         setActiveDownload(null);
-        chrome.runtime.sendMessage({
+        broadcastToAll({
           type: "DOWNLOAD_FAILED",
           itag,
           error: err.message || "Network error"
-        }).catch(() => { });
+        });
       });
 
     sendResponse({ success: true });
@@ -53,7 +71,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
         downloading: true,
         itag: activeDownload.itag,
-        status: activeDownload.status
+        status: activeDownload.status,
+        percent: activeDownload.percent,
+        downloaded: activeDownload.downloaded,
+        total: activeDownload.total
       });
     } else {
       sendResponse({ downloading: false });
@@ -74,13 +95,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       percent: 0,
       status: "Starting download..."
     });
-    chrome.runtime.sendMessage({
+    broadcastToAll({
       type: "DOWNLOAD_PROGRESS",
       itag: 9999,
       downloaded: 0,
       total,
       percent: 0
-    }).catch(() => { });
+    });
     return true;
   }
 
@@ -95,32 +116,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         status: `Downloading: ${percent}%`
       });
     }
-    chrome.runtime.sendMessage({
+    broadcastToAll({
       type: "DOWNLOAD_PROGRESS",
       itag: 9999,
       downloaded,
       total,
       percent
-    }).catch(() => { });
+    });
     return true;
   }
 
   if (message.type === "TAB_DOWNLOAD_COMPLETE") {
     setActiveDownload(null);
-    chrome.runtime.sendMessage({
+    broadcastToAll({
       type: "DOWNLOAD_COMPLETE",
       itag: 9999
-    }).catch(() => { });
+    });
     return true;
   }
 
   if (message.type === "TAB_DOWNLOAD_FAILED") {
     setActiveDownload(null);
-    chrome.runtime.sendMessage({
+    broadcastToAll({
       type: "DOWNLOAD_FAILED",
       itag: 9999,
       error: message.error
-    }).catch(() => { });
+    });
     return true;
   }
 });

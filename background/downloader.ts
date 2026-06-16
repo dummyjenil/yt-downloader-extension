@@ -26,7 +26,7 @@ const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
 
 export async function getStreamSize(url: string): Promise<number> {
   try {
-    const response = await fetch(url, { method: "HEAD" });
+    const response = await fetch(`${url}&ext_download=true`, { method: "HEAD" });
     const size = response.headers.get("content-length");
     if (size) return parseInt(size, 10);
   } catch (e) {
@@ -34,7 +34,7 @@ export async function getStreamSize(url: string): Promise<number> {
   }
   
   try {
-    const response = await fetch(`${url}&range=0-0`);
+    const response = await fetch(`${url}&range=0-0&ext_download=true`);
     const contentRange = response.headers.get("content-range");
     if (contentRange) {
       const parts = contentRange.split("/");
@@ -90,7 +90,7 @@ export async function startChunkedDownload(
     const start = i * CHUNK_SIZE;
     const end = Math.min((i + 1) * CHUNK_SIZE, totalSize) - 1;
     
-    const chunkUrl = `${url}&range=${start}-${end}`;
+    const chunkUrl = `${url}&range=${start}-${end}&ext_download=true`;
     let success = false;
     let retries = 3;
     let arrayBuffer: ArrayBuffer | null = null;

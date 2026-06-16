@@ -32,7 +32,7 @@ export async function setDNRHeadersForClient(clientName: "WEB" | "ANDROID_VR" | 
         ]
       },
       condition: {
-        urlFilter: "*://www.youtube.com/youtubei/v1/player*",
+        urlFilter: "*://www.youtube.com/youtubei/v1/player*ext_request=true*",
         resourceTypes: [
           chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST
         ]
@@ -50,7 +50,7 @@ export async function setDNRHeadersForClient(clientName: "WEB" | "ANDROID_VR" | 
         ]
       },
       condition: {
-        urlFilter: "*://*.googlevideo.com/*",
+        urlFilter: "*://*.googlevideo.com/*ext_download=true*",
         resourceTypes: [
           chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
           chrome.declarativeNetRequest.ResourceType.MEDIA,

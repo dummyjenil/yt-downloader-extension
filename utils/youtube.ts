@@ -1,5 +1,12 @@
 export const extractVideoId = (url: string): string | null => {
   if (!url) return null;
+  if (url.includes("/shorts/")) {
+    const parts = url.split("/shorts/");
+    if (parts.length > 1) {
+      const id = parts[1].split(/[?#&]/)[0];
+      if (id.length === 11) return id;
+    }
+  }
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
   const match = url.match(regExp);
   return match && match[2].length === 11 ? match[2] : null;
