@@ -1,10 +1,5 @@
 import { setDNRHeadersForClient } from "./background/dnr";
 import { fetchVideoInfo } from "./background/youtube-api";
-import {
-  getActiveDownload,
-  setActiveDownload,
-  startChunkedDownload
-} from "./background/downloader";
 
 // Set default rules to ANDROID_VR when background loads
 chrome.runtime.onInstalled.addListener(() => {
@@ -15,7 +10,24 @@ chrome.runtime.onStartup.addListener(() => {
   setDNRHeadersForClient("ANDROID_VR").catch(console.error);
 });
 
-// Broadcast message to both the extension pages (popup) and all tabs (YouTube content script overlays)
+interface ActiveDownload {
+  id: string;
+  url: string;
+  title: string;
+  ext: string;
+  downloaded: number;
+  total: number;
+  percent: number;
+  speed: number;
+  eta: number;
+  status: "idle" | "downloading" | "paused" | "complete" | "error";
+  errorMessage?: string;
+  timestamp: number;
+}
+
+const activeDownloads = new Map<string, ActiveDownload>();
+
+// Broadcast message to popup and all tabs (YouTube content script overlays)
 function broadcastToAll(message: any) {
   chrome.runtime.sendMessage(message).catch(() => {});
   chrome.tabs.query({}, (tabs) => {
@@ -24,6 +36,15 @@ function broadcastToAll(message: any) {
         chrome.tabs.sendMessage(tab.id, message).catch(() => {});
       }
     }
+  });
+}
+
+function saveToHistory(item: any) {
+  chrome.storage.local.get(["downloadHistory"], (result) => {
+    const history = result.downloadHistory || [];
+    // Keep max 50 items
+    const updatedHistory = [item, ...history].slice(0, 50);
+    chrome.storage.local.set({ downloadHistory: updatedHistory });
   });
 }
 
@@ -47,100 +68,172 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "DOWNLOAD_STREAM") {
-    const { url, title, ext, itag, contentLength } = message;
+  if (message.type === "ADD_DOWNLOAD_JOB") {
+    const { url, title, ext, contentLength } = message;
 
-    startChunkedDownload(url, title, ext, itag, contentLength)
-      .catch((err) => {
-        console.error("Chunked download failed:", err);
-        setActiveDownload(null);
-        broadcastToAll({
-          type: "DOWNLOAD_FAILED",
-          itag,
-          error: err.message || "Network error"
-        });
-      });
+    // Check if dashboard/downloader tab is already open
+    const targetUrl = chrome.runtime.getURL("tabs/download.html");
+    chrome.tabs.query({}, (tabs) => {
+      const existingTab = tabs.find(t => t.url && t.url.startsWith(targetUrl));
 
+      if (existingTab && existingTab.id !== undefined) {
+        // Send a message to the existing tab to add the job
+        chrome.tabs.sendMessage(existingTab.id, {
+          type: "NEW_DOWNLOAD_JOB",
+          url,
+          title,
+          ext,
+          contentLength
+        }).catch(() => {});
+        // Focus the existing tab
+        chrome.tabs.update(existingTab.id, { active: true });
+        sendResponse({ success: true, tabOpened: false });
+      } else {
+        // Create new tab and pass the parameters
+        const downloadPageUrl = `${targetUrl}?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&ext=${ext}&contentLength=${contentLength || ""}`;
+        chrome.tabs.create({ url: downloadPageUrl, active: true });
+        sendResponse({ success: true, tabOpened: true });
+      }
+    });
+    return true;
+  }
+
+  // Relay actions to the download page
+  if (message.type === "PAUSE_DOWNLOAD" || message.type === "RESUME_DOWNLOAD" || message.type === "CANCEL_DOWNLOAD") {
+    const targetUrl = chrome.runtime.getURL("tabs/download.html");
+    chrome.tabs.query({}, (tabs) => {
+      const existingTab = tabs.find(t => t.url && t.url.startsWith(targetUrl));
+      if (existingTab && existingTab.id !== undefined) {
+        chrome.tabs.sendMessage(existingTab.id, message).catch(() => {});
+      }
+    });
     sendResponse({ success: true });
     return true;
   }
 
-  if (message.type === "GET_DOWNLOAD_STATUS") {
-    const activeDownload = getActiveDownload();
-    if (activeDownload) {
-      sendResponse({
-        downloading: true,
-        itag: activeDownload.itag,
-        status: activeDownload.status,
-        percent: activeDownload.percent,
-        downloaded: activeDownload.downloaded,
-        total: activeDownload.total
-      });
-    } else {
-      sendResponse({ downloading: false });
-    }
-    return true;
-  }
-
-  // Handlers for tab-based direct streaming downloads (to update popup and keep state synchronized)
+  // Registry updates sent by the download page
   if (message.type === "TAB_DOWNLOAD_START") {
-    const { url, title, ext, total } = message;
-    setActiveDownload({
+    const { id, url, title, ext, total } = message;
+    activeDownloads.set(id, {
+      id,
       url,
       title,
       ext,
-      itag: 9999,
       downloaded: 0,
       total,
       percent: 0,
-      status: "Starting download..."
+      speed: 0,
+      eta: 0,
+      status: "downloading",
+      timestamp: Date.now()
     });
-    broadcastToAll({
-      type: "DOWNLOAD_PROGRESS",
-      itag: 9999,
-      downloaded: 0,
-      total,
-      percent: 0
-    });
+    broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
     return true;
   }
 
   if (message.type === "TAB_DOWNLOAD_PROGRESS") {
-    const { percent, downloaded, total } = message;
-    const activeDownload = getActiveDownload();
-    if (activeDownload) {
-      setActiveDownload({
-        ...activeDownload,
+    const { id, percent, downloaded, total, speed, eta } = message;
+    const download = activeDownloads.get(id);
+    if (download) {
+      activeDownloads.set(id, {
+        ...download,
         downloaded,
         percent,
-        status: `Downloading: ${percent}%`
+        total,
+        speed,
+        eta,
+        status: "downloading"
       });
     }
-    broadcastToAll({
-      type: "DOWNLOAD_PROGRESS",
-      itag: 9999,
-      downloaded,
-      total,
-      percent
-    });
+    broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
+    return true;
+  }
+
+  if (message.type === "TAB_DOWNLOAD_PAUSE_STATE") {
+    const { id, isPaused } = message;
+    const download = activeDownloads.get(id);
+    if (download) {
+      activeDownloads.set(id, {
+        ...download,
+        status: isPaused ? "paused" : "downloading"
+      });
+    }
+    broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
     return true;
   }
 
   if (message.type === "TAB_DOWNLOAD_COMPLETE") {
-    setActiveDownload(null);
-    broadcastToAll({
-      type: "DOWNLOAD_COMPLETE",
-      itag: 9999
-    });
+    const { id } = message;
+    const download = activeDownloads.get(id);
+    if (download) {
+      activeDownloads.set(id, {
+        ...download,
+        status: "complete",
+        percent: 100,
+        downloaded: download.total
+      });
+      // Save to storage history
+      saveToHistory({
+        id,
+        title: download.title,
+        ext: download.ext,
+        total: download.total,
+        timestamp: Date.now(),
+        status: "complete"
+      });
+      // Trigger notification
+      chrome.notifications.create(id, {
+        type: "basic",
+        iconUrl: "assets/icon.png",
+        title: "Download Complete",
+        message: `${download.title}.${download.ext} has been successfully downloaded!`
+      }, () => {});
+    }
+    broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
     return true;
   }
 
   if (message.type === "TAB_DOWNLOAD_FAILED") {
-    setActiveDownload(null);
-    broadcastToAll({
-      type: "DOWNLOAD_FAILED",
-      itag: 9999,
-      error: message.error
+    const { id, error } = message;
+    const download = activeDownloads.get(id);
+    if (download) {
+      activeDownloads.set(id, {
+        ...download,
+        status: "error",
+        errorMessage: error
+      });
+      // Save to storage history
+      saveToHistory({
+        id,
+        title: download.title,
+        ext: download.ext,
+        total: download.total,
+        timestamp: Date.now(),
+        status: "error",
+        error
+      });
+      // Trigger notification
+      chrome.notifications.create(id, {
+        type: "basic",
+        iconUrl: "assets/icon.png",
+        title: "Download Failed",
+        message: `Failed to download ${download.title}.${download.ext}: ${error}`
+      }, () => {});
+    }
+    broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
+    return true;
+  }
+
+  if (message.type === "TAB_DOWNLOAD_CANCELLED") {
+    const { id } = message;
+    activeDownloads.delete(id);
+    broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
+    return true;
+  }
+
+  if (message.type === "GET_ALL_DOWNLOADS") {
+    sendResponse({
+      downloads: Array.from(activeDownloads.values())
     });
     return true;
   }

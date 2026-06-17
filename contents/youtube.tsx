@@ -16,12 +16,8 @@ export default function YoutubeOverlay() {
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [activeTab, setActiveTab] = useState<"video" | "audio" | "adaptive">("video");
 
-  // Download-related states
-  const [downloadingItag, setDownloadingItag] = useState<number | null>(null);
-  const [downloadPercent, setDownloadPercent] = useState<number | null>(null);
-  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
-  const [downloadedBytes, setDownloadedBytes] = useState<number | null>(null);
-  const [totalSize, setTotalSize] = useState<number | null>(null);
+  // Download-related states synced from background registry
+  const [downloads, setDownloads] = useState<any[]>([]);
 
   // Load typography and track routing changes
   useEffect(() => {
@@ -52,39 +48,19 @@ export default function YoutubeOverlay() {
     };
   }, []);
 
-  // Sync active download progress and listen to background events
+  // Sync active downloads registry and listen to background updates
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.runtime) {
       // Fetch initial background status on mount
-      chrome.runtime.sendMessage({ type: "GET_DOWNLOAD_STATUS" }, (response) => {
-        if (response && response.downloading) {
-          setDownloadingItag(response.itag);
-          setDownloadPercent(response.percent ?? 0);
-          setDownloadedBytes(response.downloaded ?? 0);
-          setTotalSize(response.total ?? 0);
-          setDownloadStatus(response.status ?? "Downloading...");
+      chrome.runtime.sendMessage({ type: "GET_ALL_DOWNLOADS" }, (response) => {
+        if (response && response.downloads) {
+          setDownloads(response.downloads);
         }
       });
 
       const messageListener = (message: any) => {
-        if (message.type === "DOWNLOAD_PROGRESS") {
-          setDownloadingItag(message.itag);
-          setDownloadPercent(message.percent);
-          setDownloadedBytes(message.downloaded);
-          setTotalSize(message.total);
-          setDownloadStatus(`Downloading: ${message.percent}%`);
-        } else if (message.type === "DOWNLOAD_COMPLETE") {
-          setDownloadingItag(null);
-          setDownloadPercent(null);
-          setDownloadedBytes(null);
-          setTotalSize(null);
-          setDownloadStatus("Complete");
-        } else if (message.type === "DOWNLOAD_FAILED") {
-          setDownloadingItag(null);
-          setDownloadPercent(null);
-          setDownloadedBytes(null);
-          setTotalSize(null);
-          setDownloadStatus(`Failed: ${message.error}`);
+        if (message.type === "DOWNLOADS_UPDATED") {
+          setDownloads(message.downloads);
         }
       };
 
@@ -127,10 +103,6 @@ export default function YoutubeOverlay() {
 
   const handleDownload = (stream: StreamFormat, category: "video" | "audio" | "adaptive") => {
     if (!videoInfo) return;
-    if (downloadingItag !== null) {
-      alert("A download is already in progress.");
-      return;
-    }
 
     let ext = "mp4";
     if (category === "audio") {
@@ -143,25 +115,17 @@ export default function YoutubeOverlay() {
     const cleanTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, "_");
     const filename = `${cleanTitle}${suffix}`;
 
-    // Initialize UI progress states
-    setDownloadingItag(9999);
-    setDownloadPercent(0);
-    setDownloadedBytes(0);
-    setTotalSize(stream.contentLength ? parseInt(stream.contentLength, 10) : 0);
-    setDownloadStatus("Starting download...");
-
-    // Send command to open the download tab
+    // Send command to background to add download job
     if (typeof chrome !== "undefined" && chrome.runtime) {
-      const downloadPageUrl = chrome.runtime.getURL(
-        `tabs/download.html?url=${encodeURIComponent(stream.url)}&title=${encodeURIComponent(filename)}&ext=${ext}&contentLength=${stream.contentLength || ""}`
-      );
       chrome.runtime.sendMessage({
-        type: "OPEN_DOWNLOAD_TAB",
-        url: downloadPageUrl
+        type: "ADD_DOWNLOAD_JOB",
+        url: stream.url,
+        title: filename,
+        ext: ext,
+        contentLength: stream.contentLength || ""
       }).catch((e) => {
-        console.error("Failed to open download tab:", e);
-        setDownloadStatus("Error: Failed to initiate background downloader.");
-        setDownloadingItag(null);
+        console.error("Failed to add download job:", e);
+        alert("Failed to initiate background downloader.");
       });
     }
   };
@@ -169,11 +133,22 @@ export default function YoutubeOverlay() {
   // If we're not on a watch or shorts page, render nothing
   if (!videoId) return null;
 
+  // Find if there is an active download matching the current video title
+  const activeJobs = downloads.filter((d) => d.status === "downloading" || d.status === "paused");
+  const cleanTitleForMatch = videoInfo ? videoInfo.title.replace(/[\\/:*?"<>|]/g, "_") : "";
+  const currentVideoJob = activeJobs.find(
+    (d) => d.title.includes(cleanTitleForMatch) || cleanTitleForMatch.includes(d.title)
+  );
+
+  const isCurrentlyDownloading = currentVideoJob !== undefined;
+  const currentDownloadPercent = currentVideoJob ? currentVideoJob.percent : null;
+  const currentDownloadStatus = currentVideoJob ? currentVideoJob.status : null;
+
   // Circular progress calculations
   const radius = 28;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = downloadPercent !== null 
-    ? circumference - (circumference * downloadPercent) / 100 
+  const strokeDashoffset = currentDownloadPercent !== null 
+    ? circumference - (circumference * currentDownloadPercent) / 100 
     : circumference;
 
   return (
@@ -647,7 +622,7 @@ export default function YoutubeOverlay() {
           onClick={() => setShowDialog(true)} 
           title="Download Options"
         >
-          {downloadingItag !== null ? (
+          {isCurrentlyDownloading && currentDownloadStatus === "downloading" ? (
             /* Pulsing download icon when download is active */
             <svg 
               viewBox="0 0 24 24" 
@@ -750,35 +725,40 @@ export default function YoutubeOverlay() {
                 {/* Lists Area */}
                 <div className="ytd-stream-list">
                   {activeTab === "video" &&
-                    videoInfo.formats.map((stream) => (
-                      <div className="ytd-stream-row" key={stream.itag}>
-                        <div className="ytd-stream-info">
-                          <span className="ytd-stream-label">
-                            MP4 Progressive ({stream.qualityLabel || "Progressive"})
-                          </span>
-                          <span className="ytd-stream-meta">
-                            {formatBytes(stream.contentLength)} • Video + Audio
-                          </span>
+                    videoInfo.formats.map((stream) => {
+                      const isDownloading = downloads.some(
+                        (d) => d.url === stream.url && (d.status === "downloading" || d.status === "paused")
+                      );
+                      return (
+                        <div className="ytd-stream-row" key={stream.itag}>
+                          <div className="ytd-stream-info">
+                            <span className="ytd-stream-label">
+                              MP4 Progressive ({stream.qualityLabel || "Progressive"})
+                            </span>
+                            <span className="ytd-stream-meta">
+                              {formatBytes(stream.contentLength)} • Video + Audio
+                            </span>
+                          </div>
+                          <button 
+                            className="ytd-download-icon-btn"
+                            disabled={isDownloading}
+                            onClick={() => handleDownload(stream, "video")}
+                          >
+                            {isDownloading ? (
+                              /* Small micro-spinner */
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
+                                <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                              </svg>
+                            ) : (
+                              /* Down Arrow */
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 5v14M19 12l-7 7-7-7" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
-                        <button 
-                          className="ytd-download-icon-btn"
-                          disabled={downloadingItag !== null}
-                          onClick={() => handleDownload(stream, "video")}
-                        >
-                          {downloadingItag === stream.itag ? (
-                            /* Small micro-spinner */
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
-                              <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-                            </svg>
-                          ) : (
-                            /* Down Arrow */
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M12 5v14M19 12l-7 7-7-7" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                    ))
+                      );
+                    })
                   }
 
                   {activeTab === "audio" &&
@@ -789,6 +769,9 @@ export default function YoutubeOverlay() {
                         const isOpus = stream.mimeType.includes("opus");
                         const ext = isOpus ? "webm" : "m4a";
                         const kbps = Math.round((stream.bitrate || 0) / 1000);
+                        const isDownloading = downloads.some(
+                          (d) => d.url === stream.url && (d.status === "downloading" || d.status === "paused")
+                        );
                         return (
                           <div className="ytd-stream-row" key={stream.itag}>
                             <div className="ytd-stream-info">
@@ -801,10 +784,10 @@ export default function YoutubeOverlay() {
                             </div>
                             <button 
                               className="ytd-download-icon-btn"
-                              disabled={downloadingItag !== null}
+                              disabled={isDownloading}
                               onClick={() => handleDownload(stream, "audio")}
                             >
-                              {downloadingItag === stream.itag ? (
+                              {isDownloading ? (
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
                                   <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
                                 </svg>
@@ -829,6 +812,9 @@ export default function YoutubeOverlay() {
                       })
                       .map((stream) => {
                         const isWebm = stream.mimeType.includes("webm");
+                        const isDownloading = downloads.some(
+                          (d) => d.url === stream.url && (d.status === "downloading" || d.status === "paused")
+                        );
                         return (
                           <div className="ytd-stream-row" key={stream.itag}>
                             <div className="ytd-stream-info">
@@ -841,10 +827,10 @@ export default function YoutubeOverlay() {
                             </div>
                             <button 
                               className="ytd-download-icon-btn"
-                              disabled={downloadingItag !== null}
+                              disabled={isDownloading}
                               onClick={() => handleDownload(stream, "adaptive")}
                             >
-                              {downloadingItag === stream.itag ? (
+                              {isDownloading ? (
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
                                   <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
                                 </svg>
@@ -862,26 +848,86 @@ export default function YoutubeOverlay() {
               </>
             )}
 
-            {/* Bottom active download progress status indicator inside dialog */}
-            {downloadingItag !== null && (
-              <div className="ytd-progress-card">
-                <div className="ytd-progress-card-header">
-                  <span>Downloading stream chunks...</span>
-                  <span style={{ fontWeight: 700, color: "#a78bfa" }}>
-                    {downloadPercent !== null ? `${downloadPercent}%` : "0%"}
-                  </span>
-                </div>
-                <div className="ytd-progress-bar-bg">
-                  <div 
-                    className="ytd-progress-bar-fg" 
-                    style={{ width: `${downloadPercent ?? 0}%` }}
-                  />
-                </div>
-                <div className="ytd-progress-details">
-                  <span>{downloadStatus}</span>
-                  {downloadedBytes !== null && totalSize !== null && (
-                    <span>{formatBytes(downloadedBytes)} / {formatBytes(totalSize)}</span>
-                  )}
+            {/* Mini Dashboard of All Active Downloads */}
+            {activeJobs.length > 0 && (
+              <div style={{ marginTop: "20px", borderTop: "1px solid rgba(255, 255, 255, 0.08)", paddingTop: "16px" }}>
+                <h4 style={{ margin: "0 0 12px 0", fontSize: "12px", fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Active Downloads ({activeJobs.length})
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "160px", overflowY: "auto", paddingRight: "4px" }}>
+                  {activeJobs.map((job) => (
+                    <div className="ytd-progress-card" key={job.id} style={{ margin: 0, padding: "10px 12px" }}>
+                      <div className="ytd-progress-card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: "#e4e4e7", maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {job.title}.{job.ext}
+                        </span>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <button
+                            onClick={() => {
+                              chrome.runtime.sendMessage({
+                                type: job.status === "paused" ? "RESUME_DOWNLOAD" : "PAUSE_DOWNLOAD",
+                                id: job.id
+                              });
+                            }}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: job.status === "paused" ? "#10b981" : "#fbbf24",
+                              cursor: "pointer",
+                              padding: 0,
+                              display: "flex",
+                              alignItems: "center"
+                            }}
+                          >
+                            {job.status === "paused" ? (
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            ) : (
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="4" y="4" width="4" height="16" />
+                                <rect x="16" y="4" width="4" height="16" />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => {
+                              chrome.runtime.sendMessage({ type: "CANCEL_DOWNLOAD", id: job.id });
+                            }}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "#f43f5e",
+                              cursor: "pointer",
+                              padding: 0,
+                              display: "flex",
+                              alignItems: "center"
+                            }}
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                              <line x1="18" y1="6" x2="6" y2="18"></line>
+                              <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="ytd-progress-bar-bg" style={{ margin: "4px 0", height: "3.5px" }}>
+                        <div 
+                          className="ytd-progress-bar-fg" 
+                          style={{
+                            width: `${job.percent}%`,
+                            background: job.status === "paused" ? "#fbbf24" : "linear-gradient(90deg, #f43f5e 0%, #8b5cf6 100%)"
+                          }}
+                        />
+                      </div>
+                      <div className="ytd-progress-details" style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: "#a1a1aa" }}>
+                        <span>
+                          {job.status === "paused" ? "Paused" : `${formatBytes(job.speed)}/s`}
+                        </span>
+                        <span>{job.percent}%</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

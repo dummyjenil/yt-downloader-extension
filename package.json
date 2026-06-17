@@ -32,7 +32,9 @@
       "declarativeNetRequestWithHostAccess",
       "activeTab",
       "tabs",
-      "downloads"
+      "downloads",
+      "storage",
+      "notifications"
     ]
   }
 }
