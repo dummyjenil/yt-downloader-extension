@@ -32,7 +32,7 @@ export async function setDNRHeadersForClient(clientName: "WEB" | "ANDROID_VR" | 
         ]
       },
       condition: {
-        urlFilter: "*://www.youtube.com/youtubei/v1/player*ext_request=true*",
+        urlFilter: "*://www.youtube.com/youtubei/v1/*ext_request=true*",
         resourceTypes: [
           chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST
         ]

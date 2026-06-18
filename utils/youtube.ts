@@ -12,6 +12,22 @@ export const extractVideoId = (url: string): string | null => {
   return match && match[2].length === 11 ? match[2] : null;
 };
 
+export const extractPlaylistId = (url: string): string | null => {
+  if (!url) return null;
+  try {
+    const urlObj = new URL(url);
+    const listId = urlObj.searchParams.get("list");
+    if (listId && listId.trim().length > 4) {
+      return listId.trim();
+    }
+  } catch (e) {
+    // Fallback if URL parsing fails
+    const match = url.match(/[&?]list=([^&]+)/);
+    if (match) return match[1];
+  }
+  return null;
+};
+
 export const formatBytes = (bytesStr: string | number | undefined) => {
   if (!bytesStr) return "Unknown size";
   const bytes = typeof bytesStr === "string" ? parseInt(bytesStr, 10) : bytesStr;
