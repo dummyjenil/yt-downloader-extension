@@ -89,6 +89,7 @@ export function useDownloadManager() {
         addNewJob(url, title, ext, contentLength ? parseInt(contentLength, 10) : 0);
         sendResponse({ success: true });
 
+      }
     };
     chrome.runtime.onMessage.addListener(messageListener);
     return () => chrome.runtime.onMessage.removeListener(messageListener);
@@ -206,7 +207,7 @@ export function useDownloadManager() {
   const processQueue = async () => {
     const jobs = Array.from(jobsRef.current.values());
     const downloadingCount = jobs.filter(j => j.status === "downloading").length;
-    
+
     const limit = maxConcurrentJobsRef.current;
     if (downloadingCount < limit) {
       // Find the next idle job that is not paused or cancelled
@@ -323,7 +324,7 @@ export function useDownloadManager() {
 
       job.totalSize = totalSize;
       job.writableStream = writableStream;
-      
+
       // Notify background and launch download loops
       chrome.runtime.sendMessage({
         type: "TAB_DOWNLOAD_START",
@@ -340,7 +341,7 @@ export function useDownloadManager() {
       console.error(err);
       job.status = "error";
       job.errorMessage = err.message || "Failed to set up destination file.";
-      
+
       chrome.runtime.sendMessage({
         type: "TAB_DOWNLOAD_FAILED",
         id: job.id,
@@ -396,12 +397,12 @@ export function useDownloadManager() {
               } catch (err) {
                 console.warn("Failed to close writable stream:", err);
               }
-              
+
               chrome.runtime.sendMessage({
                 type: "TAB_DOWNLOAD_COMPLETE",
                 id: job.id
               });
-              
+
               // Update local history
               refreshHistory();
 
@@ -416,7 +417,7 @@ export function useDownloadManager() {
             console.error("Chunk fetch failed completely:", err);
             job.status = "error";
             job.errorMessage = err.message || "Network error";
-            try { await job.writableStream.abort(); } catch (_) {}
+            try { await job.writableStream.abort(); } catch (_) { }
 
             chrome.runtime.sendMessage({
               type: "TAB_DOWNLOAD_FAILED",
@@ -534,7 +535,7 @@ export function useDownloadManager() {
       job.cancelled = true;
       try {
         await job.writableStream.abort();
-      } catch (_) {}
+      } catch (_) { }
       chrome.runtime.sendMessage({ type: "TAB_DOWNLOAD_CANCELLED", id: jobId });
       jobsRef.current.delete(jobId);
       setJobList(Array.from(jobsRef.current.values()));
