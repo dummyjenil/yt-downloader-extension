@@ -1,5 +1,5 @@
 import { setDNRHeadersForClient } from "./background/dnr";
-import { fetchVideoInfo, fetchFullPlaylist } from "./background/youtube-api";
+import { fetchVideoInfo } from "./background/youtube-api";
 
 // Set default rules to ANDROID_VR when background loads
 chrome.runtime.onInstalled.addListener(() => {
@@ -68,41 +68,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "GET_PLAYLIST_INFO") {
-    const playlistId = message.playlistId;
-    fetchFullPlaylist(playlistId)
-      .then((info) => {
-        sendResponse({ success: true, info });
-      })
-      .catch((err) => {
-        sendResponse({ success: false, error: err.message });
-      });
-    return true;
-  }
-
-  if (message.type === "ADD_PLAYLIST_JOBS") {
-    const { videos, playlistName } = message;
-    const targetUrl = chrome.runtime.getURL("tabs/download.html");
-    
-    chrome.tabs.query({}, (tabs) => {
-      const existingTab = tabs.find(t => t.url && t.url.startsWith(targetUrl));
-      if (existingTab && existingTab.id !== undefined) {
-        chrome.tabs.sendMessage(existingTab.id, {
-          type: "NEW_PLAYLIST_JOBS",
-          videos,
-          playlistName
-        }).catch(() => {});
-        chrome.tabs.update(existingTab.id, { active: true });
-        sendResponse({ success: true });
-      } else {
-        chrome.storage.local.set({ pendingPlaylistJobs: { videos, playlistName } }, () => {
-          chrome.tabs.create({ url: targetUrl, active: true });
-          sendResponse({ success: true });
-        });
-      }
-    });
-    return true;
-  }
 
   if (message.type === "ADD_DOWNLOAD_JOB") {
     const { url, title, ext, contentLength } = message;
@@ -220,7 +185,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Trigger notification
       chrome.notifications.create(id, {
         type: "basic",
-        iconUrl: "assets/icon.png",
+        iconUrl: chrome.runtime.getURL("assets/icon.png"),
         title: "Download Complete",
         message: `${download.title}.${download.ext} has been successfully downloaded!`
       }, () => {});
@@ -251,7 +216,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Trigger notification
       chrome.notifications.create(id, {
         type: "basic",
-        iconUrl: "assets/icon.png",
+        iconUrl: chrome.runtime.getURL("assets/icon.png"),
         title: "Download Failed",
         message: `Failed to download ${download.title}.${download.ext}: ${error}`
       }, () => {});
@@ -264,6 +229,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const { id } = message;
     activeDownloads.delete(id);
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
+    return true;
+  }
+
+  if (message.type === "CLEAR_DOWNLOAD") {
+    const { id } = message;
+    activeDownloads.delete(id);
+    broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
+    sendResponse({ success: true });
     return true;
   }
 

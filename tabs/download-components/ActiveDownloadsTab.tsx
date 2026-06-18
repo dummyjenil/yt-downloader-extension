@@ -2,6 +2,7 @@ import React from "react";
 import { formatBytes, formatTime } from "../../utils/youtube";
 import type { JobState } from "../download-hooks/useDownloadManager";
 
+
 interface ActiveDownloadsTabProps {
   jobList: JobState[];
   defaultDirName: string | null;
@@ -11,6 +12,10 @@ interface ActiveDownloadsTabProps {
   pauseJob: (id: string) => void;
   resumeJob: (id: string) => void;
   cancelJob: (id: string) => void;
+  clearJob: (id: string) => void;
+
+  maxConcurrentJobs: number;
+  updateSetting: (key: "maxConcurrentJobs", val: number) => void;
 }
 
 export const ActiveDownloadsTab: React.FC<ActiveDownloadsTabProps> = ({
@@ -21,10 +26,16 @@ export const ActiveDownloadsTab: React.FC<ActiveDownloadsTabProps> = ({
   startSetup,
   pauseJob,
   resumeJob,
-  cancelJob
+  cancelJob,
+  clearJob,
+
+  maxConcurrentJobs,
+  updateSetting
 }) => {
   return (
     <div>
+
+
       <h2 style={{ fontSize: "24px", fontWeight: 700, marginBottom: "20px" }}>Active Downloads</h2>
       {defaultDirName && dirPermission !== "granted" && (
         <div
@@ -199,27 +210,50 @@ export const ActiveDownloadsTab: React.FC<ActiveDownloadsTabProps> = ({
                       </svg>
                     </button>
                   )}
-                  <button
-                    onClick={() => cancelJob(job.id)}
-                    style={{
-                      background: "rgba(244, 63, 94, 0.1)",
-                      border: "1px solid rgba(244, 63, 94, 0.2)",
-                      color: "#fda4af",
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "10px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center"
-                    }}
-                    title="Cancel"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                  </button>
+                  {(job.status === "complete" || job.status === "error") && (
+                    <button
+                      onClick={() => clearJob(job.id)}
+                      style={{
+                        background: "rgba(255, 255, 255, 0.05)",
+                        border: "1px solid rgba(255, 255, 255, 0.08)",
+                        color: "#e4e4e7",
+                        padding: "0 12px",
+                        borderRadius: "10px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        height: "32px"
+                      }}
+                      title="Clear"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  {job.status !== "complete" && job.status !== "error" && (
+                    <button
+                      onClick={() => cancelJob(job.id)}
+                      style={{
+                        background: "rgba(244, 63, 94, 0.1)",
+                        border: "1px solid rgba(244, 63, 94, 0.2)",
+                        color: "#fda4af",
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "10px",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}
+                      title="Cancel"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -232,9 +266,11 @@ export const ActiveDownloadsTab: React.FC<ActiveDownloadsTabProps> = ({
                     ? `Error: ${job.errorMessage}`
                     : job.status === "idle"
                     ? "Waiting to start..."
+                    : job.status === "complete"
+                    ? "Complete"
                     : `Downloading (${formatBytes(job.downloadedBytes)} / ${formatBytes(job.totalSize)})`}
                 </span>
-                <span style={{ fontWeight: 700, color: job.status === "paused" ? "#fbbf24" : job.status === "idle" ? "#60a5fa" : "#a78bfa" }}>
+                <span style={{ fontWeight: 700, color: job.status === "paused" ? "#fbbf24" : job.status === "idle" ? "#60a5fa" : job.status === "complete" ? "#10b981" : "#a78bfa" }}>
                   {job.percent}%
                 </span>
               </div>

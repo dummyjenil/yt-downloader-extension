@@ -35,6 +35,7 @@ export function useDownloadManager() {
   const [dirPermission, setDirPermission] = useState<string | null>(null);
   const [historyList, setHistoryList] = useState<any[]>([]);
 
+
   const jobsRef = useRef<Map<string, JobState>>(new Map());
   const chunkSizeRef = useRef(chunkSize);
   const concurrencyRef = useRef(concurrency);
@@ -47,18 +48,11 @@ export function useDownloadManager() {
 
   // Load Settings and History on mount
   useEffect(() => {
-    chrome.storage.local.get(["chunkSize", "concurrency", "maxConcurrentJobs", "downloadHistory", "pendingPlaylistJobs"], (res) => {
+    chrome.storage.local.get(["chunkSize", "concurrency", "maxConcurrentJobs", "downloadHistory"], (res) => {
       if (res.chunkSize) setChunkSize(res.chunkSize);
       if (res.concurrency) setConcurrency(res.concurrency);
       if (res.maxConcurrentJobs) setMaxConcurrentJobs(res.maxConcurrentJobs);
       if (res.downloadHistory) setHistoryList(res.downloadHistory);
-      
-      // If there are pending playlist jobs from storage, add them!
-      if (res.pendingPlaylistJobs) {
-        const { videos, playlistName } = res.pendingPlaylistJobs;
-        chrome.storage.local.remove("pendingPlaylistJobs");
-        addPlaylistJobs(videos, playlistName);
-      }
     });
 
     getDirectoryHandle().then((handle) => {
@@ -94,11 +88,7 @@ export function useDownloadManager() {
         const { url, title, ext, contentLength } = message;
         addNewJob(url, title, ext, contentLength ? parseInt(contentLength, 10) : 0);
         sendResponse({ success: true });
-      } else if (message.type === "NEW_PLAYLIST_JOBS") {
-        const { videos, playlistName } = message;
-        addPlaylistJobs(videos, playlistName);
-        sendResponse({ success: true });
-      }
+
     };
     chrome.runtime.onMessage.addListener(messageListener);
     return () => chrome.runtime.onMessage.removeListener(messageListener);
@@ -210,47 +200,7 @@ export function useDownloadManager() {
     processQueue();
   };
 
-  // Bulk add jobs for playlist
-  const addPlaylistJobs = async (videos: any[], playlistName: string) => {
-    const currentJobs = new Map(jobsRef.current);
-    
-    for (const video of videos) {
-      const jobId = `job_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-      const cleanTitle = video.title.replace(/[\\/:*?"<>|]/g, "_");
-      
-      const newJob: JobState = {
-        id: jobId,
-        url: "", // Resolved dynamically on demand
-        videoId: video.videoId,
-        playlistName,
-        title: cleanTitle,
-        ext: "mp4",
-        totalSize: 0,
-        downloadedBytes: 0,
-        percent: 0,
-        speed: 0,
-        eta: 9999,
-        status: "idle",
-        paused: false,
-        cancelled: false,
-        writableStream: null,
-        nextChunkToWrite: 0,
-        downloadedChunks: new Map(),
-        activeFetches: new Set(),
-        startedTime: Date.now(),
-        speedHistory: [],
-        launchedChunks: 0
-      };
-      
-      currentJobs.set(jobId, newJob);
-    }
 
-    jobsRef.current = currentJobs;
-    setJobList(Array.from(currentJobs.values()));
-
-    // Trigger queue processing
-    processQueue();
-  };
 
   // Self-driving queue processing logic
   const processQueue = async () => {
@@ -322,11 +272,7 @@ export function useDownloadManager() {
           if (perm === "granted") {
             setDirPermission("granted");
             let targetDirHandle = dirHandle;
-            // If it belongs to a playlist, create/obtain the subfolder named after the playlist
-            if (job.playlistName) {
-              const cleanPlaylistName = job.playlistName.replace(/[\\/:*?"<>|]/g, "_");
-              targetDirHandle = await dirHandle.getDirectoryHandle(cleanPlaylistName, { create: true });
-            }
+
             const fileHandle = await targetDirHandle.getFileHandle(`${job.title}.${job.ext}`, { create: true });
             writableStream = await fileHandle.createWritable();
           }
@@ -621,6 +567,14 @@ export function useDownloadManager() {
     chrome.storage.local.set({ [key]: val });
   };
 
+
+
+  const clearJob = (jobId: string) => {
+    jobsRef.current.delete(jobId);
+    setJobList(Array.from(jobsRef.current.values()));
+    chrome.runtime.sendMessage({ type: "CLEAR_DOWNLOAD", id: jobId });
+  };
+
   return {
     jobList,
     chunkSize,
@@ -629,6 +583,7 @@ export function useDownloadManager() {
     defaultDirName,
     dirPermission,
     historyList,
+    clearJob,
     requestDirPermission,
     handleSelectDirectory,
     handleClearDirectory,

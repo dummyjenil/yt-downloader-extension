@@ -1,16 +1,14 @@
 import type { PlasmoCSConfig } from "plasmo";
 import React, { useEffect, useState } from "react";
 import type { VideoInfo, StreamFormat } from "../types/youtube";
-import { extractVideoId, extractPlaylistId } from "../utils/youtube";
+import { extractVideoId } from "../utils/youtube";
 
 // Subcomponents and Styles
 import { YOUTUBE_OVERLAY_STYLES } from "./youtube/youtube-styles";
 import { FAB } from "./youtube/FAB";
 import { VideoDetailCard } from "./youtube/VideoDetailCard";
-import { PlaylistDetailCard } from "./youtube/PlaylistDetailCard";
 import { ActiveDownloads } from "./youtube/ActiveDownloads";
 import { VideoOptions } from "./youtube/VideoOptions";
-import { PlaylistOptions } from "./youtube/PlaylistOptions";
 
 // Content Script Configuration to run on all YouTube domains
 export const config: PlasmoCSConfig = {
@@ -19,21 +17,11 @@ export const config: PlasmoCSConfig = {
 
 export default function YoutubeOverlay() {
   const [videoId, setVideoId] = useState<string | null>(null);
-  const [playlistId, setPlaylistId] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
-  const [playlistInfo, setPlaylistInfo] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<"video" | "audio" | "adaptive">("video");
-
-  // Playlist state variables
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortOption, setSortOption] = useState<"default" | "title-asc" | "title-desc" | "duration-asc" | "duration-desc">("default");
-  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set());
-  const [rangeStart, setRangeStart] = useState("1");
-  const [rangeEnd, setRangeEnd] = useState("10");
-  const [playlistBatchSize, setPlaylistBatchSize] = useState(3);
 
   // Download-related states synced from background registry
   const [downloads, setDownloads] = useState<any[]>([]);
@@ -50,15 +38,7 @@ export default function YoutubeOverlay() {
     const handleUrlChange = () => {
       const url = window.location.href;
       const id = extractVideoId(url);
-      const listId = extractPlaylistId(url);
-      
-      if (window.location.pathname.startsWith("/playlist")) {
-        setVideoId(null);
-        setPlaylistId(listId);
-      } else {
-        setVideoId(id);
-        setPlaylistId(null);
-      }
+      setVideoId(id);
     };
 
     handleUrlChange();
@@ -96,29 +76,13 @@ export default function YoutubeOverlay() {
     }
   }, []);
 
-  // Whenever videoId changes, auto pre-fetch the stream options
+  // Whenever videoId changes, reset video states (do NOT auto-fetch)
   useEffect(() => {
-    if (videoId) {
-      fetchInfo(videoId);
-    } else {
-      setVideoInfo(null);
-      setError(null);
-      setLoading(false);
-      setShowDialog(false);
-    }
+    setVideoInfo(null);
+    setError(null);
+    setLoading(false);
+    setShowDialog(false);
   }, [videoId]);
-
-  // Whenever playlistId changes, fetch playlist data
-  useEffect(() => {
-    if (playlistId) {
-      fetchPlaylistData(playlistId);
-    } else {
-      setPlaylistInfo(null);
-      setError(null);
-      setLoading(false);
-      setShowDialog(false);
-    }
-  }, [playlistId]);
 
   const fetchInfo = (id: string) => {
     setLoading(true);
@@ -135,29 +99,6 @@ export default function YoutubeOverlay() {
           setVideoInfo(response.info);
         } else {
           setError(response?.error || "Unable to extract stream links for this video.");
-        }
-      }
-    );
-  };
-
-  const fetchPlaylistData = (id: string) => {
-    setLoading(true);
-    setError(null);
-    setPlaylistInfo(null);
-
-    chrome.runtime.sendMessage(
-      { type: "GET_PLAYLIST_INFO", playlistId: id },
-      (response) => {
-        setLoading(false);
-        if (chrome.runtime.lastError) {
-          setError("Failed to communicate with YouTube Downloader background.");
-        } else if (response && response.success) {
-          setPlaylistInfo(response.info);
-          const ids = new Set<string>(response.info.videos.map((v: any) => v.videoId));
-          setSelectedVideoIds(ids);
-          setRangeEnd(String(response.info.videos.length));
-        } else {
-          setError(response?.error || "Unable to extract playlist details.");
         }
       }
     );
@@ -192,35 +133,8 @@ export default function YoutubeOverlay() {
     }
   };
 
-  const handlePlaylistDownload = () => {
-    if (!playlistInfo) return;
-    const selectedVideos = playlistInfo.videos.filter((v: any) => selectedVideoIds.has(v.videoId));
-    if (selectedVideos.length === 0) {
-      alert("Please select at least one video to download.");
-      return;
-    }
-
-    if (typeof chrome !== "undefined" && chrome.runtime) {
-      chrome.storage.local.set({ maxConcurrentJobs: playlistBatchSize }, () => {
-        chrome.runtime.sendMessage({
-          type: "ADD_PLAYLIST_JOBS",
-          videos: selectedVideos.map((v: any) => ({
-            videoId: v.videoId,
-            title: v.title
-          })),
-          playlistName: playlistInfo.title
-        }).then(() => {
-          setShowDialog(false);
-        }).catch((e) => {
-          console.error("Failed to add playlist jobs:", e);
-          alert("Failed to start playlist downloader.");
-        });
-      });
-    }
-  };
-
-  // If we're not on a watch or playlist page, render nothing
-  if (!videoId && !playlistId) return null;
+  // If we're not on a watch page, render nothing
+  if (!videoId) return null;
 
   // Find if there is an active download matching the current video title
   const activeJobs = downloads.filter((d) => d.status === "downloading" || d.status === "paused");
@@ -247,7 +161,14 @@ export default function YoutubeOverlay() {
 
       {/* Floating Action Button (FAB) + Progress Circle */}
       <FAB
-        onClick={() => setShowDialog(true)}
+        onClick={() => {
+          setShowDialog(true);
+          if (videoId) {
+            if (!videoInfo && !loading) {
+              fetchInfo(videoId);
+            }
+          }
+        }}
         isCurrentlyDownloading={isCurrentlyDownloading}
         currentDownloadStatus={currentDownloadStatus}
         circumference={circumference}
@@ -257,21 +178,15 @@ export default function YoutubeOverlay() {
       {/* Modal Dialog Popup */}
       {showDialog && (
         <div className="ytd-backdrop" onClick={() => setShowDialog(false)}>
-          <div className="ytd-dialog" style={{ maxWidth: playlistId ? "520px" : "420px" }} onClick={(e) => e.stopPropagation()}>
+          <div className="ytd-dialog" style={{ maxWidth: "420px" }} onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="ytd-dialog-header">
               <div className="ytd-dialog-title-area">
                 <h3 className="ytd-dialog-title">
-                  {playlistId 
-                    ? (playlistInfo ? playlistInfo.title : "Extracting Playlist Details")
-                    : (videoInfo ? videoInfo.title : "Extracting Video Streams")
-                  }
+                  {videoInfo ? videoInfo.title : "Extracting Video Streams"}
                 </h3>
                 <p className="ytd-dialog-subtitle">
-                  {playlistId
-                    ? (playlistInfo ? `by ${playlistInfo.author}` : "Please wait...")
-                    : (videoInfo ? `by ${videoInfo.author}` : "Please wait...")
-                  }
+                  {videoInfo ? `by ${videoInfo.author}` : "Please wait..."}
                 </p>
               </div>
               <button className="ytd-close-btn" onClick={() => setShowDialog(false)}>
@@ -282,20 +197,16 @@ export default function YoutubeOverlay() {
               </button>
             </div>
 
-            {/* Detail Card (Video or Playlist) */}
-            {!playlistId && videoInfo && (
+            {/* Detail Card (Video) */}
+            {videoInfo && (
               <VideoDetailCard videoInfo={videoInfo} />
-            )}
-
-            {playlistId && playlistInfo && (
-              <PlaylistDetailCard playlistInfo={playlistInfo} />
             )}
 
             {/* Loader State */}
             {loading && (
               <div className="ytd-loader-wrapper">
                 <div className="ytd-spinner"></div>
-                <span>{playlistId ? "Parsing YouTube playlist database..." : "Parsing InnerTube streaming configuration..."}</span>
+                <span>Parsing InnerTube streaming configuration...</span>
               </div>
             )}
 
@@ -303,34 +214,14 @@ export default function YoutubeOverlay() {
             {error && (
               <div className="ytd-error">
                 <div>{error}</div>
-                <button className="ytd-error-btn" onClick={() => playlistId ? fetchPlaylistData(playlistId) : fetchInfo(videoId!)}>
+                <button className="ytd-error-btn" onClick={() => fetchInfo(videoId!)}>
                   Retry
                 </button>
               </div>
             )}
 
-            {/* Playlist Options Area */}
-            {playlistId && playlistInfo && (
-              <PlaylistOptions
-                playlistInfo={playlistInfo}
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                sortOption={sortOption}
-                setSortOption={setSortOption}
-                selectedVideoIds={selectedVideoIds}
-                setSelectedVideoIds={setSelectedVideoIds}
-                rangeStart={rangeStart}
-                setRangeStart={setRangeStart}
-                rangeEnd={rangeEnd}
-                setRangeEnd={setRangeEnd}
-                playlistBatchSize={playlistBatchSize}
-                setPlaylistBatchSize={setPlaylistBatchSize}
-                handlePlaylistDownload={handlePlaylistDownload}
-              />
-            )}
-
             {/* Loaded Options Area */}
-            {!playlistId && videoInfo && (
+            {videoInfo && (
               <VideoOptions
                 videoInfo={videoInfo}
                 activeTab={activeTab}

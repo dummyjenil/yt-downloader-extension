@@ -16,6 +16,7 @@ export default function DownloadPage() {
     defaultDirName,
     dirPermission,
     historyList,
+    clearJob,
     requestDirPermission,
     handleSelectDirectory,
     handleClearDirectory,
@@ -64,6 +65,9 @@ export default function DownloadPage() {
             pauseJob={pauseJob}
             resumeJob={resumeJob}
             cancelJob={cancelJob}
+            clearJob={clearJob}
+            maxConcurrentJobs={maxConcurrentJobs}
+            updateSetting={updateSetting}
           />
         )}
 
