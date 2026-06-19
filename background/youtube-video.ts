@@ -1,7 +1,31 @@
 import { setDNRHeadersForClient } from "./dnr";
 
+let cachedApiKey: string | null = process.env.PLASMO_PUBLIC_YOUTUBE_API_KEY || null;
+
+export async function getApiKey(): Promise<string> {
+  if (cachedApiKey) {
+    return cachedApiKey;
+  }
+  try {
+    const response = await fetch("https://www.youtube.com/app_shell");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch app_shell: ${response.status}`);
+    }
+    const text = await response.text();
+    const match = text.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/) || text.match(/INNERTUBE_API_KEY":"([^"]+)"/) || text.match(/INNERTUBE_API_KEY":"(.*?)","?/);
+    if (match && match[1]) {
+      cachedApiKey = match[1];
+      return cachedApiKey;
+    }
+    throw new Error("INNERTUBE_API_KEY not found in app_shell response");
+  } catch (error) {
+    console.error("Failed to retrieve InnerTube API key dynamically:", error);
+    return "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+  }
+}
+
 export async function fetchVisitorData(videoId: string): Promise<string> {
-  const apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+  const apiKey = await getApiKey();
   const url = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false&ext_request=true`;
 
   await setDNRHeadersForClient("WEB");
@@ -59,10 +83,11 @@ export async function fetchVideoInfo(videoId: string) {
     console.warn("Failed to fetch visitorData:", error.message);
   }
 
+  const apiKey = await getApiKey();
   const clientConfigs = [
     {
       name: "ANDROID_VR" as const,
-      apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+      apiKey: apiKey,
       payloadContext: {
         client: {
           clientName: "ANDROID_VR",
@@ -78,7 +103,7 @@ export async function fetchVideoInfo(videoId: string) {
     },
     {
       name: "TV" as const,
-      apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+      apiKey: apiKey,
       payloadContext: {
         client: {
           clientName: "TVHTML5",

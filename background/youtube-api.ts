@@ -1,1 +1,1 @@
-export { fetchVisitorData, fetchVideoInfo } from "./youtube-video";
+export { fetchVisitorData, fetchVideoInfo, getApiKey } from "./youtube-video";
