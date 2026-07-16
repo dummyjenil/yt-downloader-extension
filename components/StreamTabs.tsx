@@ -2,8 +2,8 @@ import React from "react";
 import { getTabButtonStyle, themeStyles } from "../styles/theme";
 
 interface StreamTabsProps {
-  activeTab: "video" | "audio" | "adaptive";
-  setActiveTab: (tab: "video" | "audio" | "adaptive") => void;
+  activeTab: "video" | "audio" | "adaptive" | "fusion";
+  setActiveTab: (tab: "video" | "audio" | "adaptive" | "fusion") => void;
 }
 
 export const StreamTabs: React.FC<StreamTabsProps> = ({
@@ -29,6 +29,12 @@ export const StreamTabs: React.FC<StreamTabsProps> = ({
         style={getTabButtonStyle(activeTab === "adaptive")}
       >
         Video Only (HD)
+      </button>
+      <button
+        onClick={() => setActiveTab("fusion")}
+        style={getTabButtonStyle(activeTab === "fusion")}
+      >
+        Custom Fusion
       </button>
     </div>
   );

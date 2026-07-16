@@ -1,5 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { getDirectoryHandle, storeDirectoryHandle, clearDirectoryHandle } from "../../utils/storage";
+import { getCachedFile } from "../../utils/ffmpeg-helper";
+
+const ffmpegWorkerUrl = new URL("../../node_modules/@ffmpeg/ffmpeg/dist/umd/814.ffmpeg.js", import.meta.url);
 
 export interface JobState {
   id: string;
@@ -24,6 +27,17 @@ export interface JobState {
   startedTime: number;
   speedHistory: { time: number; bytes: number }[];
   launchedChunks: number;
+
+  // Adaptive merging properties
+  audioUrl?: string;
+  audioSize?: number;
+  audioExt?: string;
+  adaptiveVideoChunks?: Map<number, ArrayBuffer>;
+  adaptiveAudioChunks?: Map<number, ArrayBuffer>;
+  launchedVideoChunks?: number;
+  launchedAudioChunks?: number;
+  videoDownloadedBytes?: number;
+  audioDownloadedBytes?: number;
 }
 
 export function useDownloadManager() {
@@ -49,10 +63,10 @@ export function useDownloadManager() {
   // Load Settings and History on mount
   useEffect(() => {
     chrome.storage.local.get(["chunkSize", "concurrency", "maxConcurrentJobs", "downloadHistory"], (res) => {
-      if (res.chunkSize) setChunkSize(res.chunkSize);
-      if (res.concurrency) setConcurrency(res.concurrency);
-      if (res.maxConcurrentJobs) setMaxConcurrentJobs(res.maxConcurrentJobs);
-      if (res.downloadHistory) setHistoryList(res.downloadHistory);
+      if (res.chunkSize) setChunkSize(res.chunkSize as number);
+      if (res.concurrency) setConcurrency(res.concurrency as number);
+      if (res.maxConcurrentJobs) setMaxConcurrentJobs(res.maxConcurrentJobs as number);
+      if (res.downloadHistory) setHistoryList(res.downloadHistory as any[]);
     });
 
     getDirectoryHandle().then((handle) => {
@@ -85,10 +99,17 @@ export function useDownloadManager() {
         cancelJob(message.id);
         sendResponse({ success: true });
       } else if (message.type === "NEW_DOWNLOAD_JOB") {
-        const { url, title, ext, contentLength } = message;
-        addNewJob(url, title, ext, contentLength ? parseInt(contentLength, 10) : 0);
+        const { url, title, ext, contentLength, audioUrl, audioSize, audioExt } = message;
+        addNewJob(
+          url,
+          title,
+          ext,
+          contentLength ? parseInt(contentLength, 10) : 0,
+          audioUrl,
+          audioSize ? parseInt(audioSize, 10) : undefined,
+          audioExt
+        );
         sendResponse({ success: true });
-
       }
     };
     chrome.runtime.onMessage.addListener(messageListener);
@@ -103,11 +124,15 @@ export function useDownloadManager() {
     const ext = urlParams.get("ext") || "mp4";
     const contentLengthStr = urlParams.get("contentLength") || "0";
     const totalSize = parseInt(contentLengthStr, 10);
+    const audioUrl = urlParams.get("audioUrl") || undefined;
+    const audioSizeStr = urlParams.get("audioSize") || "";
+    const audioSize = audioSizeStr ? parseInt(audioSizeStr, 10) : undefined;
+    const audioExt = urlParams.get("audioExt") || undefined;
 
     if (url) {
       // Small timeout to allow everything to mount
       setTimeout(() => {
-        addNewJob(url, title, ext, totalSize);
+        addNewJob(url, title, ext, totalSize, audioUrl, audioSize, audioExt);
       }, 300);
     }
   }, []);
@@ -168,7 +193,15 @@ export function useDownloadManager() {
   };
 
   // Add a new download job
-  const addNewJob = async (url: string, title: string, ext: string, totalSize: number) => {
+  const addNewJob = async (
+    url: string,
+    title: string,
+    ext: string,
+    totalSize: number,
+    audioUrl?: string,
+    audioSize?: number,
+    audioExt?: string
+  ) => {
     const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_");
     const jobId = `job_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
@@ -191,7 +224,10 @@ export function useDownloadManager() {
       activeFetches: new Set(),
       startedTime: Date.now(),
       speedHistory: [],
-      launchedChunks: 0
+      launchedChunks: 0,
+      audioUrl,
+      audioSize,
+      audioExt
     };
 
     jobsRef.current.set(jobId, newJob);
@@ -325,6 +361,8 @@ export function useDownloadManager() {
       job.totalSize = totalSize;
       job.writableStream = writableStream;
 
+      const finalTotalSize = totalSize + (job.audioSize || 0);
+
       // Notify background and launch download loops
       chrome.runtime.sendMessage({
         type: "TAB_DOWNLOAD_START",
@@ -332,7 +370,7 @@ export function useDownloadManager() {
         url: job.url,
         title: job.title,
         ext: job.ext,
-        total: totalSize
+        total: finalTotalSize
       });
 
       startJobDownload(job.id);
@@ -364,29 +402,190 @@ export function useDownloadManager() {
 
     const currentChunkSize = chunkSizeRef.current;
     const currentConcurrency = concurrencyRef.current;
-    const totalChunks = Math.ceil(job.totalSize / currentChunkSize);
 
+    // Adaptive double-stream flow
+    if (job.audioUrl) {
+      const videoSize = job.totalSize;
+      const audioSize = job.audioSize || 0;
+      const totalSize = videoSize + audioSize;
+
+      const totalVideoChunks = Math.ceil(videoSize / currentChunkSize);
+      const totalAudioChunks = Math.ceil(audioSize / currentChunkSize);
+
+      if (!job.adaptiveVideoChunks) job.adaptiveVideoChunks = new Map<number, ArrayBuffer>();
+      if (!job.adaptiveAudioChunks) job.adaptiveAudioChunks = new Map<number, ArrayBuffer>();
+      if (job.launchedVideoChunks === undefined) job.launchedVideoChunks = 0;
+      if (job.launchedAudioChunks === undefined) job.launchedAudioChunks = 0;
+      if (job.videoDownloadedBytes === undefined) job.videoDownloadedBytes = 0;
+      if (job.audioDownloadedBytes === undefined) job.audioDownloadedBytes = 0;
+
+      const updateProgress = () => {
+        job.downloadedBytes = job.videoDownloadedBytes! + job.audioDownloadedBytes!;
+        job.percent = Math.round((job.downloadedBytes / totalSize) * 100);
+
+        const now = Date.now();
+        job.speedHistory.push({ time: now, bytes: job.downloadedBytes });
+        job.speedHistory = job.speedHistory.filter((h) => now - h.time < 4000);
+
+        if (job.speedHistory.length > 1) {
+          const first = job.speedHistory[0];
+          const elapsed = (now - first.time) / 1000;
+          job.speed = elapsed > 0 ? (job.downloadedBytes - first.bytes) / elapsed : 0;
+        } else {
+          const elapsed = (now - job.startedTime) / 1000;
+          job.speed = elapsed > 0 ? job.downloadedBytes / elapsed : 0;
+        }
+
+        const remaining = totalSize - job.downloadedBytes;
+        job.eta = job.speed > 0 ? remaining / job.speed : 0;
+
+        chrome.runtime.sendMessage({
+          type: "TAB_DOWNLOAD_PROGRESS",
+          id: job.id,
+          percent: job.percent,
+          downloaded: job.downloadedBytes,
+          total: totalSize,
+          speed: job.speed,
+          eta: job.eta
+        });
+      };
+
+      const activeVideoFetches = new Set<number>();
+      const downloadVideo = () => {
+        return new Promise<void>((resolve, reject) => {
+          const fetchNext = () => {
+            if (job.paused || job.cancelled) {
+              reject(new Error("Job paused or cancelled."));
+              return;
+            }
+            if (job.adaptiveVideoChunks!.size === totalVideoChunks) {
+              resolve();
+              return;
+            }
+
+            while (activeVideoFetches.size < currentConcurrency && job.launchedVideoChunks! < totalVideoChunks) {
+              const chunkIdx = job.launchedVideoChunks!++;
+              activeVideoFetches.add(chunkIdx);
+
+              fetchChunkWithRetry(job, chunkIdx, totalVideoChunks, currentChunkSize)
+                .then((arrayBuffer) => {
+                  if (!arrayBuffer) return;
+                  job.adaptiveVideoChunks!.set(chunkIdx, arrayBuffer);
+                  activeVideoFetches.delete(chunkIdx);
+                  job.videoDownloadedBytes! += arrayBuffer.byteLength;
+                  updateProgress();
+                  fetchNext();
+                })
+                .catch(reject);
+            }
+          };
+          fetchNext();
+        });
+      };
+
+      const activeAudioFetches = new Set<number>();
+      const downloadAudio = () => {
+        return new Promise<void>((resolve, reject) => {
+          const fetchNext = () => {
+            if (job.paused || job.cancelled) {
+              reject(new Error("Job paused or cancelled."));
+              return;
+            }
+            if (job.adaptiveAudioChunks!.size === totalAudioChunks) {
+              resolve();
+              return;
+            }
+
+            while (activeAudioFetches.size < currentConcurrency && job.launchedAudioChunks! < totalAudioChunks) {
+              const chunkIdx = job.launchedAudioChunks!++;
+              activeAudioFetches.add(chunkIdx);
+
+              fetchAudioChunkWithRetry(job, chunkIdx, totalAudioChunks, currentChunkSize)
+                .then((arrayBuffer) => {
+                  if (!arrayBuffer) return;
+                  job.adaptiveAudioChunks!.set(chunkIdx, arrayBuffer);
+                  activeAudioFetches.delete(chunkIdx);
+                  job.audioDownloadedBytes! += arrayBuffer.byteLength;
+                  updateProgress();
+                  fetchNext();
+                })
+                .catch(reject);
+            }
+          };
+          fetchNext();
+        });
+      };
+
+      try {
+        await downloadVideo();
+        await downloadAudio();
+
+        chrome.runtime.sendMessage({
+          type: "TAB_DOWNLOAD_PROGRESS",
+          id: job.id,
+          percent: 99,
+          downloaded: totalSize,
+          total: totalSize,
+          speed: 0,
+          eta: 0
+        });
+
+        const videoBuf = mergeChunksToBuffer(job.adaptiveVideoChunks!, totalVideoChunks);
+        const audioBuf = mergeChunksToBuffer(job.adaptiveAudioChunks!, totalAudioChunks);
+
+        const mergedBuf = await runFFmpegMerge(videoBuf, audioBuf, job.ext, job.audioExt);
+
+        await job.writableStream.write(mergedBuf);
+        await job.writableStream.close();
+
+        job.status = "complete";
+        job.percent = 100;
+        job.downloadedBytes = totalSize;
+
+        chrome.runtime.sendMessage({
+          type: "TAB_DOWNLOAD_COMPLETE",
+          id: job.id
+        });
+
+        refreshHistory();
+        processQueue();
+      } catch (err: any) {
+        console.error("Adaptive download/merge error:", err);
+        if (job.paused || job.cancelled) return;
+        job.status = "error";
+        job.errorMessage = err.message || "Merge processing failed.";
+        try {
+          await job.writableStream.abort();
+        } catch (_) {}
+        chrome.runtime.sendMessage({
+          type: "TAB_DOWNLOAD_FAILED",
+          id: job.id,
+          error: job.errorMessage
+        });
+        processQueue();
+      }
+      return;
+    }
+
+    const totalChunks = Math.ceil(job.totalSize / currentChunkSize);
     const downloadLoop = async () => {
       if (job.paused || job.cancelled || job.status === "error" || job.status === "complete") {
         return;
       }
 
-      // Launch up to concurrency limit
       while (job.activeFetches.size < currentConcurrency && job.launchedChunks < totalChunks) {
         const chunkIdx = job.launchedChunks++;
         job.activeFetches.add(chunkIdx);
 
         fetchChunkWithRetry(job, chunkIdx, totalChunks, currentChunkSize)
           .then(async (arrayBuffer) => {
-            if (!arrayBuffer) return; // paused/cancelled
+            if (!arrayBuffer) return;
 
             job.downloadedChunks.set(chunkIdx, arrayBuffer);
             job.activeFetches.delete(chunkIdx);
 
-            // Write all available sequential chunks
             await writeSequentialChunks(job, currentChunkSize);
 
-            // Check completion
             if (job.nextChunkToWrite >= totalChunks && job.status === "downloading") {
               job.status = "complete";
               job.percent = 100;
@@ -403,13 +602,9 @@ export function useDownloadManager() {
                 id: job.id
               });
 
-              // Update local history
               refreshHistory();
-
-              // Trigger next job in queue
               processQueue();
             } else if (job.nextChunkToWrite < totalChunks) {
-              // Trigger next worker loop
               downloadLoop();
             }
           })
@@ -425,7 +620,6 @@ export function useDownloadManager() {
               error: job.errorMessage
             });
 
-            // Trigger next job in queue
             processQueue();
           });
       }
@@ -547,7 +741,7 @@ export function useDownloadManager() {
 
   const refreshHistory = () => {
     chrome.storage.local.get(["downloadHistory"], (res) => {
-      if (res.downloadHistory) setHistoryList(res.downloadHistory);
+      if (res.downloadHistory) setHistoryList(res.downloadHistory as any[]);
     });
   };
 
@@ -595,4 +789,124 @@ export function useDownloadManager() {
     clearHistory,
     updateSetting
   };
+}
+
+// FFmpeg Helper Functions for Audio-Video Merging
+const fetchAudioChunkWithRetry = async (
+  job: JobState,
+  chunkIdx: number,
+  totalChunks: number,
+  size: number
+): Promise<ArrayBuffer | null> => {
+  if (!job.audioUrl) return null;
+  const start = chunkIdx * size;
+  const end = Math.min((chunkIdx + 1) * size, job.audioSize || 0) - 1;
+  const chunkUrl = `${job.audioUrl}&range=${start}-${end}&ext_download=true`;
+
+  let attempt = 0;
+  const maxAttempts = 5;
+
+  while (attempt < maxAttempts) {
+    if (job.paused || job.cancelled) return null;
+
+    try {
+      const response = await fetch(chunkUrl);
+      if (!response.ok) throw new Error(`HTTP Status ${response.status}`);
+      return await response.arrayBuffer();
+    } catch (err) {
+      attempt++;
+      if (attempt >= maxAttempts) throw err;
+      const delay = 500 * Math.pow(2, attempt - 1);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  return null;
+};
+
+function mergeChunksToBuffer(chunks: Map<number, ArrayBuffer>, totalChunks: number): Uint8Array {
+  let totalLength = 0;
+  for (let i = 0; i < totalChunks; i++) {
+    const chunk = chunks.get(i);
+    if (chunk) {
+      totalLength += chunk.byteLength;
+    }
+  }
+
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (let i = 0; i < totalChunks; i++) {
+    const chunk = chunks.get(i);
+    if (chunk) {
+      result.set(new Uint8Array(chunk), offset);
+      offset += chunk.byteLength;
+    }
+  }
+  return result;
+}
+
+async function runFFmpegMerge(
+  videoData: Uint8Array,
+  audioData: Uint8Array,
+  ext: string,
+  audioExt?: string
+): Promise<Uint8Array> {
+  // Retrieve cached FFmpeg core Blobs from IndexedDB
+  const coreJSBlob = await getCachedFile("ffmpeg-core.js");
+  const coreWASMBlob = await getCachedFile("ffmpeg-core.wasm");
+
+  if (!coreJSBlob || !coreWASMBlob) {
+    throw new Error("FFmpeg is not installed. Please go to Settings and install it first.");
+  }
+
+  // Fetch the bundler's compiled FFmpeg worker file
+  let ffmpegWorkerBlob: Blob | null = null;
+  try {
+    const response = await fetch(ffmpegWorkerUrl.toString());
+    if (response.ok) {
+      ffmpegWorkerBlob = await response.blob();
+    }
+  } catch (err) {
+    console.warn("Failed to fetch local FFmpeg worker chunk:", err);
+  }
+
+  const iframe = document.getElementById("ffmpeg-sandbox") as HTMLIFrameElement;
+  if (!iframe || !iframe.contentWindow) {
+    throw new Error("FFmpeg sandbox environment is not initialized yet.");
+  }
+
+  return new Promise<Uint8Array>((resolve, reject) => {
+    const handleResponse = (event: MessageEvent) => {
+      if (!event.data) return;
+
+      if (event.data.type === "MERGE_SUCCESS") {
+        window.removeEventListener("message", handleResponse);
+        resolve(new Uint8Array(event.data.mergedData));
+      } else if (event.data.type === "MERGE_FAILURE") {
+        window.removeEventListener("message", handleResponse);
+        reject(new Error(event.data.error || "Failed to merge streams in sandbox."));
+      }
+    };
+
+    window.addEventListener("message", handleResponse);
+
+    // Send the video, audio and FFmpeg core Blobs to the sandbox iframe.
+    // We transfer the video and audio array buffers for maximum zero-copy speed.
+    const videoBuf = videoData.buffer;
+    const audioBuf = audioData.buffer;
+
+    iframe.contentWindow!.postMessage(
+      {
+        type: "MERGE",
+        videoData: videoBuf,
+        audioData: audioBuf,
+        coreJSBlob,
+        coreWASMBlob,
+        ffmpegWorkerBlob,
+        ext,
+        audioExt
+      },
+      "*",
+      [videoBuf, audioBuf]
+    );
+  });
 }

@@ -21,7 +21,7 @@ export default function YoutubeOverlay() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<"video" | "audio" | "adaptive">("video");
+  const [activeTab, setActiveTab] = useState<"video" | "audio" | "adaptive" | "fusion">("video");
 
   // Download-related states synced from background registry
   const [downloads, setDownloads] = useState<any[]>([]);
@@ -104,12 +104,39 @@ export default function YoutubeOverlay() {
     );
   };
 
-  const handleDownload = (stream: StreamFormat, category: "video" | "audio" | "adaptive") => {
+  const handleDownload = (
+    stream: StreamFormat,
+    category: "video" | "audio" | "adaptive" | "fusion",
+    customAudioStream?: StreamFormat
+  ) => {
     if (!videoInfo) return;
 
     let ext = "mp4";
+    let audioUrl: string | undefined = undefined;
+    let audioSize: number | undefined = undefined;
+    let audioExt: string | undefined = undefined;
+
     if (category === "audio") {
       ext = stream.mimeType.includes("webm") ? "webm" : "m4a";
+    } else if (category === "fusion" && customAudioStream) {
+      audioUrl = customAudioStream.url;
+      audioSize = parseInt(customAudioStream.contentLength || "0", 10);
+      audioExt = customAudioStream.mimeType.includes("webm") ? "webm" : "m4a";
+      ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
+    } else if (category === "adaptive") {
+      const isWebm = stream.mimeType.includes("webm");
+      const matchingAudios = videoInfo.adaptiveFormats.filter(
+        (f) => f.mimeType.startsWith("audio/") && f.mimeType.includes(isWebm ? "webm" : "mp4")
+      );
+      const bestAudio = matchingAudios.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0]
+        || videoInfo.adaptiveFormats.filter((f) => f.mimeType.startsWith("audio/"))[0];
+
+      if (bestAudio) {
+        audioUrl = bestAudio.url;
+        audioSize = parseInt(bestAudio.contentLength || "0", 10);
+        audioExt = bestAudio.mimeType.includes("webm") ? "webm" : "m4a";
+      }
+      ext = isWebm ? "webm" : "mp4";
     } else if (stream.mimeType.includes("webm")) {
       ext = "webm";
     }
@@ -125,7 +152,10 @@ export default function YoutubeOverlay() {
         url: stream.url,
         title: filename,
         ext: ext,
-        contentLength: stream.contentLength || ""
+        contentLength: stream.contentLength || "",
+        audioUrl: audioUrl,
+        audioSize: audioSize ? String(audioSize) : "",
+        audioExt: audioExt || ""
       }).catch((e) => {
         console.error("Failed to add download job:", e);
         alert("Failed to initiate background downloader.");

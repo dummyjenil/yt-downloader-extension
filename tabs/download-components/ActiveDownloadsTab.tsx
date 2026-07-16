@@ -37,6 +37,44 @@ export const ActiveDownloadsTab: React.FC<ActiveDownloadsTabProps> = ({
 
 
       <h2 style={{ fontSize: "24px", fontWeight: 700, marginBottom: "20px" }}>Active Downloads</h2>
+      {!defaultDirName && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "16px",
+            padding: "16px 20px",
+            background: "rgba(59, 130, 246, 0.08)",
+            border: "1px solid rgba(59, 130, 246, 0.25)",
+            borderRadius: "16px",
+            marginBottom: "24px",
+            fontSize: "13px",
+            lineHeight: 1.5,
+            color: "#dbeafe"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#60a5fa"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span>
+              Default download folder is not set. Downloads will wait as <strong>Idle</strong>. Click <strong>Start</strong> on the job card to select a save location manually, or select a default folder in <strong>Settings</strong> to enable fully automatic downloads.
+            </span>
+          </div>
+        </div>
+      )}
       {defaultDirName && dirPermission !== "granted" && (
         <div
           style={{

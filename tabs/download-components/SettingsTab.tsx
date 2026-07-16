@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { isFFmpegInstalled, downloadFFmpeg } from "../../utils/ffmpeg-helper";
 
 interface SettingsTabProps {
   chunkSize: number;
@@ -19,6 +20,76 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   handleClearDirectory,
   updateSetting
 }) => {
+  const [status, setStatus] = useState<"not_installed" | "downloading" | "installed" | "error">("not_installed");
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check if FFmpeg is installed
+    isFFmpegInstalled().then((installed) => {
+      if (installed) {
+        setStatus("installed");
+        setProgress(100);
+      } else {
+        chrome.storage.local.get(["ffmpeg_status", "ffmpeg_progress", "ffmpeg_error"], (res) => {
+          if (res.ffmpeg_status) {
+            setStatus(res.ffmpeg_status as any);
+            setProgress((res.ffmpeg_progress as number) || 0);
+            setError((res.ffmpeg_error as string) || null);
+          }
+        });
+      }
+    });
+
+    // Listen to local storage changes to keep progress in sync
+    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+      if (areaName === "local") {
+        if (changes.ffmpeg_status) {
+          setStatus(changes.ffmpeg_status.newValue as any);
+        }
+        if (changes.ffmpeg_progress) {
+          setProgress(changes.ffmpeg_progress.newValue as number);
+        }
+        if (changes.ffmpeg_error) {
+          setError((changes.ffmpeg_error.newValue as string) || null);
+        }
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+  }, []);
+
+  const handleDownloadTrigger = async () => {
+    setStatus("downloading");
+    setProgress(0);
+    setError(null);
+    chrome.storage.local.set({
+      ffmpeg_status: "downloading",
+      ffmpeg_progress: 0,
+      ffmpeg_error: ""
+    });
+
+    try {
+      await downloadFFmpeg("0.12.10", (pct) => {
+        setProgress(pct);
+        chrome.storage.local.set({ ffmpeg_progress: pct });
+      });
+      setStatus("installed");
+      setProgress(100);
+      chrome.storage.local.set({ ffmpeg_status: "installed", ffmpeg_progress: 100 });
+    } catch (err: any) {
+      console.error(err);
+      setStatus("error");
+      const errMsg = err.message || "Failed to download and store FFmpeg.";
+      setError(errMsg);
+      chrome.storage.local.set({
+        ffmpeg_status: "error",
+        ffmpeg_error: errMsg
+      });
+    }
+  };
+
   return (
     <div
       style={{
@@ -150,7 +221,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       <hr style={{ border: "none", borderTop: "1px solid rgba(255, 255, 255, 0.07)", margin: "24px 0" }} />
 
       {/* Max Concurrent Jobs (Batch size) */}
-      <div style={{ marginBottom: "12px" }}>
+      <div style={{ marginBottom: "24px" }}>
         <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#e4e4e7", marginBottom: "8px" }}>
           Max Parallel Video Downloads (Batch Size)
         </label>
@@ -177,6 +248,107 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <option key={num} value={num}>{num} {num === 1 ? "video" : "videos"}</option>
           ))}
         </select>
+      </div>
+
+      <hr style={{ border: "none", borderTop: "1px solid rgba(255, 255, 255, 0.07)", margin: "24px 0" }} />
+
+      {/* FFmpeg Integration Status */}
+      <div style={{ marginBottom: "12px" }}>
+        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#e4e4e7", marginBottom: "8px" }}>
+          FFmpeg Integration (Required for HD Merging)
+        </label>
+        <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#71717a", lineHeight: 1.5 }}>
+          FFmpeg is used at runtime to fuse high-definition adaptive video with audio tracks. To avoid bulkier extension packages, it is downloaded and installed locally on demand.
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+            background: "rgba(255, 255, 255, 0.01)",
+            border: "1px solid rgba(255, 255, 255, 0.04)",
+            borderRadius: "14px",
+            padding: "16px",
+            boxSizing: "border-box"
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "13px", color: "#a1a1aa" }}>Status:</span>
+            <span
+              style={{
+                fontSize: "12px",
+                fontWeight: 600,
+                padding: "4px 10px",
+                borderRadius: "20px",
+                background:
+                  status === "installed"
+                    ? "rgba(16, 185, 129, 0.1)"
+                    : status === "downloading"
+                    ? "rgba(245, 158, 11, 0.1)"
+                    : "rgba(239, 68, 68, 0.1)",
+                color:
+                  status === "installed"
+                    ? "#34d399"
+                    : status === "downloading"
+                    ? "#fbbf24"
+                    : "#f87171",
+                border: `1px solid ${
+                  status === "installed"
+                    ? "rgba(16, 185, 129, 0.2)"
+                    : status === "downloading"
+                    ? "rgba(245, 158, 11, 0.2)"
+                    : "rgba(239, 68, 68, 0.2)"
+                }`
+              }}
+            >
+              {status === "installed"
+                ? "Ready / Installed"
+                : status === "downloading"
+                ? `Downloading (${progress}%)`
+                : "Not Installed"}
+            </span>
+          </div>
+
+          {error && (
+            <div style={{ fontSize: "11px", color: "#f87171", background: "rgba(239, 68, 68, 0.05)", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(239, 68, 68, 0.1)" }}>
+              Error: {error}
+            </div>
+          )}
+
+          {status === "downloading" && (
+            <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  background: "linear-gradient(90deg, #a78bfa, #8b5cf6)",
+                  width: `${progress}%`,
+                  transition: "width 0.2s ease"
+                }}
+              />
+            </div>
+          )}
+
+          <button
+            onClick={handleDownloadTrigger}
+            disabled={status === "downloading"}
+            style={{
+              alignSelf: "flex-start",
+              background: status === "installed" ? "rgba(255, 255, 255, 0.03)" : "linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)",
+              border: status === "installed" ? "1px solid rgba(255, 255, 255, 0.08)" : "none",
+              color: "white",
+              padding: "8px 16px",
+              borderRadius: "10px",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: status === "downloading" ? "not-allowed" : "pointer",
+              transition: "all 0.2s",
+              opacity: status === "downloading" ? 0.5 : 1
+            }}
+          >
+            {status === "installed" ? "Reinstall FFmpeg" : "Download & Install FFmpeg"}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,9 +1,37 @@
 import { setDNRHeadersForClient } from "./background/dnr";
 import { fetchVideoInfo } from "./background/youtube-api";
+import { downloadFFmpeg, isFFmpegInstalled } from "./utils/ffmpeg-helper";
 
 // Set default rules to ANDROID_VR when background loads
 chrome.runtime.onInstalled.addListener(() => {
   setDNRHeadersForClient("ANDROID_VR").catch(console.error);
+
+  // Auto start download of FFmpeg on install
+  isFFmpegInstalled("0.12.10").then((installed) => {
+    if (!installed) {
+      chrome.storage.local.set({
+        ffmpeg_status: "downloading",
+        ffmpeg_progress: 0,
+        ffmpeg_error: ""
+      });
+
+      downloadFFmpeg("0.12.10", (progress) => {
+        chrome.storage.local.set({ ffmpeg_progress: progress });
+      })
+        .then(() => {
+          chrome.storage.local.set({ ffmpeg_status: "installed", ffmpeg_progress: 100 });
+        })
+        .catch((err) => {
+          console.error("FFmpeg auto-download failed:", err);
+          chrome.storage.local.set({
+            ffmpeg_status: "error",
+            ffmpeg_error: err.message || "Failed to download FFmpeg automatically."
+          });
+        });
+    } else {
+      chrome.storage.local.set({ ffmpeg_status: "installed", ffmpeg_progress: 100 });
+    }
+  });
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -41,7 +69,7 @@ function broadcastToAll(message: any) {
 
 function saveToHistory(item: any) {
   chrome.storage.local.get(["downloadHistory"], (result) => {
-    const history = result.downloadHistory || [];
+    const history = (result.downloadHistory as any[]) || [];
     // Keep max 50 items
     const updatedHistory = [item, ...history].slice(0, 50);
     chrome.storage.local.set({ downloadHistory: updatedHistory });
@@ -70,7 +98,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
   if (message.type === "ADD_DOWNLOAD_JOB") {
-    const { url, title, ext, contentLength } = message;
+    const { url, title, ext, contentLength, audioUrl, audioSize, audioExt } = message;
+
+    // Send response synchronously to close the channel cleanly and avoid warnings
+    sendResponse({ success: true });
 
     // Check if dashboard/downloader tab is already open
     const targetUrl = chrome.runtime.getURL("tabs/download.html");
@@ -84,19 +115,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           url,
           title,
           ext,
-          contentLength
+          contentLength,
+          audioUrl,
+          audioSize,
+          audioExt
         }).catch(() => {});
         // Focus the existing tab
         chrome.tabs.update(existingTab.id, { active: true });
-        sendResponse({ success: true, tabOpened: false });
       } else {
         // Create new tab and pass the parameters
-        const downloadPageUrl = `${targetUrl}?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&ext=${ext}&contentLength=${contentLength || ""}`;
+        let downloadPageUrl = `${targetUrl}?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&ext=${ext}&contentLength=${contentLength || ""}`;
+        if (audioUrl) {
+          downloadPageUrl += `&audioUrl=${encodeURIComponent(audioUrl)}`;
+        }
+        if (audioSize) {
+          downloadPageUrl += `&audioSize=${encodeURIComponent(audioSize)}`;
+        }
+        if (audioExt) {
+          downloadPageUrl += `&audioExt=${encodeURIComponent(audioExt)}`;
+        }
         chrome.tabs.create({ url: downloadPageUrl, active: true });
-        sendResponse({ success: true, tabOpened: true });
       }
     });
-    return true;
+    return false; // return false since response was already sent synchronously
   }
 
   // Relay actions to the download page

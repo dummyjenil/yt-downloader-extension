@@ -41,6 +41,13 @@ export default function DownloadPage() {
         padding: "0"
       }}
     >
+      {/* Hidden FFmpeg Sandbox Iframe */}
+      <iframe
+        id="ffmpeg-sandbox"
+        src="sandbox.html"
+        style={{ display: "none" }}
+      />
+
       {/* Premium Navigation Header */}
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 
