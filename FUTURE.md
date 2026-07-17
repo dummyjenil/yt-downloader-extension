@@ -1,10 +1,14 @@
-2 timestamp ke bich kaa audio / video / fusion
+2 timestamp ke bich kaa audio / video / fusion (OK)
 
-subtitle download
+chapterwise download (OK)
 
-translate subtitle download
+playlist download (all audio + video + subtitle) (OK)
 
-multiaudio download
+subtitle download (OK)
 
-inprove ui
+translate subtitle download (OK)
+
+multi audio download with diffrent languages (OK)
+
+inprove ui (OK)
 
