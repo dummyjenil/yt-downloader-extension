@@ -1,0 +1,1 @@
+yt-dlp --cookies-from-browser chrome -F "https://youtu.be/wk62YFS3gqc"
