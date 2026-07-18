@@ -157,6 +157,25 @@ export async function fetchVideoInfo(videoId: string) {
 
       const videoDetails = data.videoDetails || {};
 
+      // Extract caption tracks
+      const rawCaptions = data.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+      const captionTracks = rawCaptions.map((track: any) => {
+        let name = "";
+        const nameDict = track.name || {};
+        if ("simpleText" in nameDict) {
+          name = nameDict.simpleText;
+        } else if (Array.isArray(nameDict.runs)) {
+          name = nameDict.runs.map((r: any) => r.text || "").join("");
+        }
+        let code = track.vssId || track.languageCode || "";
+        code = code.replace(/^\.+|\.+$/g, "");
+        return {
+          baseUrl: track.baseUrl,
+          name: name || code || "Subtitle",
+          code: code || "und"
+        };
+      });
+
       // Extract formats
       const formats = (streamingData.formats || []).map((f: any) => ({
         itag: f.itag,
@@ -166,15 +185,24 @@ export async function fetchVideoInfo(videoId: string) {
         contentLength: f.contentLength
       }));
 
-      const adaptiveFormats = (streamingData.adaptiveFormats || []).map((f: any) => ({
-        itag: f.itag,
-        url: f.url,
-        mimeType: f.mimeType,
-        qualityLabel: f.qualityLabel,
-        contentLength: f.contentLength,
-        audioQuality: f.audioQuality,
-        bitrate: f.bitrate
-      }));
+      const adaptiveFormats = (streamingData.adaptiveFormats || []).map((f: any) => {
+        const audioTrack = f.audioTrack || {};
+        const rawTrackId = audioTrack.id || "";
+        const langCode = rawTrackId ? rawTrackId.split(".")[0] : undefined;
+        return {
+          itag: f.itag,
+          url: f.url,
+          mimeType: f.mimeType,
+          qualityLabel: f.qualityLabel,
+          contentLength: f.contentLength,
+          audioQuality: f.audioQuality,
+          bitrate: f.bitrate,
+          langCode: langCode,
+          displayName: audioTrack.displayName,
+          audioTrackId: rawTrackId,
+          isDefaultAudio: !!audioTrack.audioIsDefault
+        };
+      });
 
       return {
         title: videoDetails.title,
@@ -182,7 +210,8 @@ export async function fetchVideoInfo(videoId: string) {
         lengthSeconds: videoDetails.lengthSeconds,
         thumbnail: videoDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
         formats,
-        adaptiveFormats
+        adaptiveFormats,
+        captionTracks
       };
     } catch (err: any) {
       console.warn(`Client ${config.name} failed:`, err.message);
@@ -192,3 +221,4 @@ export async function fetchVideoInfo(videoId: string) {
 
   throw lastError;
 }
+

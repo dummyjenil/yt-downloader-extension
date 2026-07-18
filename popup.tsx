@@ -21,8 +21,9 @@ function IndexPopup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<"video" | "audio" | "adaptive" | "fusion">("video");
-  
+  const [activeTab, setActiveTab] = useState<"video" | "audio" | "adaptive" | "fusion" | "subtitle">("video");
+  const [trimRange, setTrimRange] = useState<TrimRange | null>(null);
+
   // Navigation tabs for popup
   const [navTab, setNavTab] = useState<"streams" | "dashboard" | "settings" | "history">("streams");
   
@@ -125,8 +126,9 @@ function IndexPopup() {
 
   const handleDownload = (
     stream: StreamFormat,
-    category: "video" | "audio" | "adaptive" | "fusion",
-    customAudioStream?: StreamFormat
+    category: "video" | "audio" | "adaptive" | "fusion" | "subtitle",
+    customAudioStream?: StreamFormat,
+    selectedSubtitles?: CaptionTrack[]
   ) => {
     if (!videoInfo) return;
 
@@ -135,7 +137,9 @@ function IndexPopup() {
     let audioSize: number | undefined = undefined;
     let audioExt: string | undefined = undefined;
 
-    if (category === "audio") {
+    if (category === "subtitle") {
+      ext = "srt";
+    } else if (category === "audio") {
       ext = stream.mimeType.includes("webm") ? "webm" : "m4a";
     } else if (category === "fusion" && customAudioStream) {
       audioUrl = customAudioStream.url;
@@ -173,7 +177,9 @@ function IndexPopup() {
       contentLength: stream.contentLength || "",
       audioUrl: audioUrl,
       audioSize: audioSize ? String(audioSize) : "",
-      audioExt: audioExt || ""
+      audioExt: audioExt || "",
+      trimRange: trimRange && trimRange.enabled ? trimRange : undefined,
+      selectedSubtitles: selectedSubtitles
     });
 
     setNavTab("dashboard"); // redirect to active dashboard tab

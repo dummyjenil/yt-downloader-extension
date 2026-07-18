@@ -7,7 +7,7 @@ export default function SandboxPage() {
       // Ensure the message is what we expect
       if (!event.data || event.data.type !== "MERGE") return;
 
-      const { videoData, audioData, coreJSBlob, coreWASMBlob, ffmpegWorkerBlob, ext, audioExt } = event.data;
+      const { videoData, audioData, subtitleBuffers, trimRange, ext, audioExt } = event.data;
       const logs: string[] = [];
 
       try {
@@ -19,9 +19,9 @@ export default function SandboxPage() {
         });
 
         // Create temporary Object URLs from the Blobs sent by the main extension
-        const coreJSUrl = URL.createObjectURL(coreJSBlob);
-        const coreWasmUrl = URL.createObjectURL(coreWASMBlob);
-        const workerBlobUrl = ffmpegWorkerBlob ? URL.createObjectURL(ffmpegWorkerBlob) : undefined;
+        const coreJSUrl = URL.createObjectURL(event.data.coreJSBlob);
+        const coreWasmUrl = URL.createObjectURL(event.data.coreWASMBlob);
+        const workerBlobUrl = event.data.ffmpegWorkerBlob ? URL.createObjectURL(event.data.ffmpegWorkerBlob) : undefined;
 
         // Backup original Worker
         const OriginalWorker = window.Worker;
@@ -53,34 +53,70 @@ export default function SandboxPage() {
         }
 
         const videoName = `input_video.${ext}`;
-        const finalAudioExt = audioExt || (ext === "webm" ? "webm" : "m4a");
-        const audioName = `input_audio.${finalAudioExt}`;
         const outputName = `output.${ext}`;
 
-        // Write files to virtual filesystem
+        // Write primary video/media file
         await ffmpeg.writeFile(videoName, new Uint8Array(videoData));
-        await ffmpeg.writeFile(audioName, new Uint8Array(audioData));
 
-        // Intelligently select codec logic for mismatched formats
-        let audioCodec = "copy";
-        if (ext === "webm" && finalAudioExt !== "webm") {
-          // WebM needs vorbis or opus audio
-          audioCodec = "libopus";
-        } else if (ext === "mp4" && finalAudioExt === "webm") {
-          // MP4 is safest with AAC audio
-          audioCodec = "aac";
+        const ffmpegArgs: string[] = [];
+        ffmpegArgs.push("-i", videoName);
+
+        // Write optional audio file if present
+        let audioName = "";
+        const finalAudioExt = audioExt || (ext === "webm" ? "webm" : "m4a");
+        if (audioData) {
+          audioName = `input_audio.${finalAudioExt}`;
+          await ffmpeg.writeFile(audioName, new Uint8Array(audioData));
+          ffmpegArgs.push("-i", audioName);
         }
 
-        // Execute copy-merge
-        await ffmpeg.exec([
-          "-i", videoName,
-          "-i", audioName,
-          "-c:v", "copy",
-          "-c:a", audioCodec,
-          "-map", "0:v:0",
-          "-map", "1:a:0",
-          outputName
-        ]);
+        // Write optional subtitle tracks if present
+        const subFileNames: string[] = [];
+        if (subtitleBuffers && subtitleBuffers.length > 0) {
+          for (let i = 0; i < subtitleBuffers.length; i++) {
+            const sub = subtitleBuffers[i];
+            const subName = sub.name || `sub_${i}.srt`;
+            await ffmpeg.writeFile(subName, new Uint8Array(sub.data));
+            subFileNames.push(subName);
+            ffmpegArgs.push("-i", subName);
+          }
+        }
+
+        // Apply trimming (-ss and -to) if active
+        if (trimRange && trimRange.enabled) {
+          ffmpegArgs.push("-ss", String(trimRange.startTimeSec));
+          ffmpegArgs.push("-to", String(trimRange.endTimeSec));
+        }
+
+        // Video codec
+        ffmpegArgs.push("-c:v", "copy");
+
+        // Audio codec configuration
+        if (audioData) {
+          let audioCodec = "copy";
+          if (ext === "webm" && finalAudioExt !== "webm") {
+            audioCodec = "libopus";
+          } else if (ext === "mp4" && finalAudioExt === "webm") {
+            audioCodec = "aac";
+          }
+          ffmpegArgs.push("-c:a", audioCodec);
+        }
+
+        // Subtitle codecs & metadata
+        if (subFileNames.length > 0) {
+          const subCodec = ext === "webm" ? "webvtt" : "mov_text";
+          ffmpegArgs.push("-c:s", subCodec);
+
+          for (let i = 0; i < subtitleBuffers.length; i++) {
+            const langCode = subtitleBuffers[i].code || "eng";
+            ffmpegArgs.push(`-metadata:s:s:${i}`, `language=${langCode}`);
+          }
+        }
+
+        ffmpegArgs.push(outputName);
+
+        console.log("Executing FFmpeg in Sandbox with args:", ffmpegArgs.join(" "));
+        await ffmpeg.exec(ffmpegArgs);
 
         // Read merged output
         const outputData = await ffmpeg.readFile(outputName);
@@ -88,7 +124,10 @@ export default function SandboxPage() {
         // Clean up virtual filesystem
         try {
           await ffmpeg.deleteFile(videoName);
-          await ffmpeg.deleteFile(audioName);
+          if (audioName) await ffmpeg.deleteFile(audioName);
+          for (const subName of subFileNames) {
+            await ffmpeg.deleteFile(subName);
+          }
           await ffmpeg.deleteFile(outputName);
           ffmpeg.terminate();
         } catch (e) {
@@ -124,3 +163,4 @@ export default function SandboxPage() {
 
   return <div style={{ display: "none" }}>FFmpeg Sandbox</div>;
 }
+

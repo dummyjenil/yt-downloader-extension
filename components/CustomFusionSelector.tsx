@@ -1,12 +1,17 @@
 import React, { useState } from "react";
-import type { VideoInfo, StreamFormat } from "../types/youtube";
+import type { VideoInfo, StreamFormat, CaptionTrack } from "../types/youtube";
 import { formatBytes } from "../utils/youtube";
 import { themeColors, themeStyles } from "../styles/theme";
 
 interface CustomFusionSelectorProps {
   videoInfo: VideoInfo;
   downloads: any[];
-  handleDownload: (videoStream: StreamFormat, category: "fusion", audioStream: StreamFormat) => void;
+  handleDownload: (
+    videoStream: StreamFormat,
+    category: "fusion",
+    audioStream: StreamFormat,
+    selectedSubtitles?: CaptionTrack[]
+  ) => void;
 }
 
 export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
@@ -26,8 +31,11 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
     .filter((f) => f.mimeType.startsWith("audio/"))
     .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
 
+  const captionTracks = videoInfo.captionTracks || [];
+
   const [selectedVideoIdx, setSelectedVideoIdx] = useState<number>(0);
   const [selectedAudioIdx, setSelectedAudioIdx] = useState<number>(0);
+  const [selectedSubtitleCodes, setSelectedSubtitleCodes] = useState<string[]>([]);
 
   const selectedVideo = videoStreams[selectedVideoIdx];
   const selectedAudio = audioStreams[selectedAudioIdx];
@@ -58,8 +66,17 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
       (d.status === "downloading" || d.status === "paused")
   );
 
+  const toggleSubtitle = (code: string) => {
+    if (selectedSubtitleCodes.includes(code)) {
+      setSelectedSubtitleCodes(selectedSubtitleCodes.filter((c) => c !== code));
+    } else {
+      setSelectedSubtitleCodes([...selectedSubtitleCodes, code]);
+    }
+  };
+
   const triggerDownload = () => {
-    handleDownload(selectedVideo, "fusion", selectedAudio);
+    const chosenSubtitles = captionTracks.filter((t) => selectedSubtitleCodes.includes(t.code));
+    handleDownload(selectedVideo, "fusion", selectedAudio, chosenSubtitles);
   };
 
   const getFormatLabel = (mime: string) => {
@@ -88,7 +105,7 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
       }}
     >
       <h4 style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#e4e4e7" }}>
-        Custom Audio & Video Fusion
+        Custom Multi-Stream Fusion (Video + Audio + Subtitles)
       </h4>
 
       {/* Video Quality Selection */}
@@ -122,9 +139,9 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
         </select>
       </div>
 
-      {/* Audio Quality Selection */}
+      {/* Audio Quality & Language Selection */}
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <span style={{ fontSize: "11px", fontWeight: 500, color: "#a1a1aa" }}>Select Audio Track:</span>
+        <span style={{ fontSize: "11px", fontWeight: 500, color: "#a1a1aa" }}>Select Audio Track (Multi-Language Enabled):</span>
         <select
           value={selectedAudioIdx}
           onChange={(e) => setSelectedAudioIdx(parseInt(e.target.value, 10))}
@@ -144,14 +161,71 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
             const size = formatBytes(stream.contentLength);
             const container = getFormatLabel(stream.mimeType);
             const kbps = Math.round((stream.bitrate || 0) / 1000);
+            const langLabel = stream.displayName || (stream.langCode ? `[${stream.langCode}]` : "Default Audio");
             return (
-              <option key={stream.itag} value={idx}>
-                {kbps} kbps ({container} • {size})
+              <option key={`${stream.itag}_${stream.langCode || idx}`} value={idx}>
+                {langLabel} - {kbps} kbps ({container} • {size})
               </option>
             );
           })}
         </select>
       </div>
+
+      {/* Multi-Select Subtitles Fusion */}
+      {captionTracks.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "11px", fontWeight: 500, color: "#a1a1aa" }}>
+              Fuse Subtitle Tracks (Multi-Select):
+            </span>
+            <span style={{ fontSize: "10px", color: "#c084fc" }}>
+              {selectedSubtitleCodes.length} selected
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+              maxHeight: "120px",
+              overflowY: "auto",
+              background: "#121215",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              borderRadius: "10px",
+              padding: "8px 10px"
+            }}
+          >
+            {captionTracks.map((track) => {
+              const isChecked = selectedSubtitleCodes.includes(track.code);
+              return (
+                <label
+                  key={track.code}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    fontSize: "12px",
+                    color: isChecked ? "#f4f4f5" : "#a1a1aa",
+                    cursor: "pointer",
+                    userSelect: "none"
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleSubtitle(track.code)}
+                    style={{ accentColor: "#8b5cf6", cursor: "pointer" }}
+                  />
+                  <span>
+                    {track.name} <span style={{ fontSize: "10px", opacity: 0.7 }}>[{track.code}]</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Mismatched Container Hint */}
       {!containersMatch && (
@@ -191,7 +265,7 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
         <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "flex-end" }}>
           <span style={{ fontSize: "10px", color: "#71717a" }}>Container Result</span>
           <span style={{ fontSize: "11px", fontWeight: 500, color: "#e4e4e7" }}>
-            {isVideoWebm ? "WebM Video" : "MP4 Video"}
+            {isVideoWebm ? "WebM Video" : "MP4 Video"} {selectedSubtitleCodes.length > 0 ? `+ ${selectedSubtitleCodes.length} Sub` : ""}
           </span>
         </div>
       </div>
@@ -231,10 +305,11 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M19 12l-7 7-7-7" />
             </svg>
-            FUSE & DOWNLOAD
+            FUSE & DOWNLOAD ({selectedSubtitleCodes.length} Subtitles)
           </>
         )}
       </button>
     </div>
   );
 };
+

@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { getDirectoryHandle, storeDirectoryHandle, clearDirectoryHandle } from "../../utils/storage";
 import { getCachedFile } from "../../utils/ffmpeg-helper";
+import { jsonToWordSrt } from "../../utils/subtitle";
+import type { TrimRange, CaptionTrack } from "../../types/youtube";
 
 const ffmpegWorkerUrl = new URL("../../node_modules/@ffmpeg/ffmpeg/dist/umd/814.ffmpeg.js", import.meta.url);
 
@@ -38,6 +40,10 @@ export interface JobState {
   launchedAudioChunks?: number;
   videoDownloadedBytes?: number;
   audioDownloadedBytes?: number;
+
+  // Trim range & multi-subtitle fusion properties
+  trimRange?: TrimRange;
+  selectedSubtitles?: CaptionTrack[];
 }
 
 export function useDownloadManager() {
@@ -99,7 +105,7 @@ export function useDownloadManager() {
         cancelJob(message.id);
         sendResponse({ success: true });
       } else if (message.type === "NEW_DOWNLOAD_JOB") {
-        const { url, title, ext, contentLength, audioUrl, audioSize, audioExt } = message;
+        const { url, title, ext, contentLength, audioUrl, audioSize, audioExt, trimRange, selectedSubtitles } = message;
         addNewJob(
           url,
           title,
@@ -107,7 +113,9 @@ export function useDownloadManager() {
           contentLength ? parseInt(contentLength, 10) : 0,
           audioUrl,
           audioSize ? parseInt(audioSize, 10) : undefined,
-          audioExt
+          audioExt,
+          trimRange,
+          selectedSubtitles
         );
         sendResponse({ success: true });
       }
@@ -128,11 +136,16 @@ export function useDownloadManager() {
     const audioSizeStr = urlParams.get("audioSize") || "";
     const audioSize = audioSizeStr ? parseInt(audioSizeStr, 10) : undefined;
     const audioExt = urlParams.get("audioExt") || undefined;
+    const trimStart = urlParams.get("trimStart");
+    const trimEnd = urlParams.get("trimEnd");
+    const trimRange = (trimStart && trimEnd) ? { enabled: true, startTimeSec: parseFloat(trimStart), endTimeSec: parseFloat(trimEnd) } : undefined;
+    const subtitlesStr = urlParams.get("subtitles");
+    const selectedSubtitles = subtitlesStr ? JSON.parse(subtitlesStr) : undefined;
 
     if (url) {
       // Small timeout to allow everything to mount
       setTimeout(() => {
-        addNewJob(url, title, ext, totalSize, audioUrl, audioSize, audioExt);
+        addNewJob(url, title, ext, totalSize, audioUrl, audioSize, audioExt, trimRange, selectedSubtitles);
       }, 300);
     }
   }, []);
@@ -200,7 +213,9 @@ export function useDownloadManager() {
     totalSize: number,
     audioUrl?: string,
     audioSize?: number,
-    audioExt?: string
+    audioExt?: string,
+    trimRange?: TrimRange,
+    selectedSubtitles?: CaptionTrack[]
   ) => {
     const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_");
     const jobId = `job_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -227,7 +242,9 @@ export function useDownloadManager() {
       launchedChunks: 0,
       audioUrl,
       audioSize,
-      audioExt
+      audioExt,
+      trimRange,
+      selectedSubtitles
     };
 
     jobsRef.current.set(jobId, newJob);
@@ -267,6 +284,62 @@ export function useDownloadManager() {
     setJobList(Array.from(jobsRef.current.values()));
 
     try {
+      // Handle SRT subtitle download job directly
+      if (job.ext === "srt") {
+        let writableStream: any = null;
+        try {
+          const dirHandle = await getDirectoryHandle();
+          if (dirHandle) {
+            const fileHandle = await dirHandle.getFileHandle(`${job.title}.${job.ext}`, { create: true });
+            writableStream = await fileHandle.createWritable();
+          }
+        } catch (_) {}
+
+        if (!writableStream) {
+          if ((window as any).showSaveFilePicker) {
+            const pickerOptions = {
+              suggestedName: `${job.title}.${job.ext}`,
+              types: [{ description: "SRT Subtitle File", accept: { "text/plain": [".srt"] } }]
+            };
+            const fileHandle = await (window as any).showSaveFilePicker(pickerOptions);
+            writableStream = await fileHandle.createWritable();
+          }
+        }
+
+        if (!writableStream) throw new Error("Could not initialize destination file stream");
+        job.writableStream = writableStream;
+
+        let jsonUrl = job.url;
+        if (jsonUrl.includes('fmt=')) {
+          jsonUrl = jsonUrl.replace('fmt=srv3', 'fmt=json3');
+        } else {
+          jsonUrl = `${jsonUrl}&fmt=json3`;
+        }
+
+        const res = await fetch(jsonUrl);
+        if (!res.ok) throw new Error(`HTTP Status ${res.status}`);
+        const jsonCaptions = await res.json();
+
+        const srtContent = jsonToWordSrt(jsonCaptions, job.trimRange);
+        const encoded = new TextEncoder().encode(srtContent);
+
+        await job.writableStream.write(encoded);
+        await job.writableStream.close();
+
+        job.status = "complete";
+        job.percent = 100;
+        job.downloadedBytes = encoded.byteLength;
+
+        chrome.runtime.sendMessage({
+          type: "TAB_DOWNLOAD_COMPLETE",
+          id: job.id
+        });
+
+        refreshHistory();
+        processQueue();
+        return;
+      }
+
       // 0. Resolve streaming formats dynamically if only videoId is present
       if (!job.url && job.videoId) {
         const info = await new Promise<any>((resolve, reject) => {
@@ -533,7 +606,42 @@ export function useDownloadManager() {
         const videoBuf = mergeChunksToBuffer(job.adaptiveVideoChunks!, totalVideoChunks);
         const audioBuf = mergeChunksToBuffer(job.adaptiveAudioChunks!, totalAudioChunks);
 
-        const mergedBuf = await runFFmpegMerge(videoBuf, audioBuf, job.ext, job.audioExt);
+        // Fetch selected subtitle tracks for multi-subtitle fusion
+        const subtitleBuffers: { name: string; code: string; data: Uint8Array }[] = [];
+        if (job.selectedSubtitles && job.selectedSubtitles.length > 0) {
+          for (let i = 0; i < job.selectedSubtitles.length; i++) {
+            const track = job.selectedSubtitles[i];
+            let jsonUrl = track.baseUrl;
+            if (jsonUrl.includes('fmt=')) {
+              jsonUrl = jsonUrl.replace('fmt=srv3', 'fmt=json3');
+            } else {
+              jsonUrl = `${jsonUrl}&fmt=json3`;
+            }
+            try {
+              const res = await fetch(jsonUrl);
+              if (res.ok) {
+                const jsonCaptions = await res.json();
+                const srtContent = jsonToWordSrt(jsonCaptions, job.trimRange);
+                subtitleBuffers.push({
+                  name: `sub_${i}.srt`,
+                  code: track.code || "eng",
+                  data: new TextEncoder().encode(srtContent)
+                });
+              }
+            } catch (err) {
+              console.warn("Failed to fetch subtitle track for fusion:", err);
+            }
+          }
+        }
+
+        const mergedBuf = await runFFmpegMerge(
+          videoBuf,
+          audioBuf,
+          job.ext,
+          job.audioExt,
+          job.trimRange,
+          subtitleBuffers
+        );
 
         await job.writableStream.write(mergedBuf);
         await job.writableStream.close();
@@ -583,6 +691,49 @@ export function useDownloadManager() {
 
             job.downloadedChunks.set(chunkIdx, arrayBuffer);
             job.activeFetches.delete(chunkIdx);
+
+            if (job.trimRange && job.trimRange.enabled) {
+              // Calculate progress for trimmed single-stream
+              job.downloadedBytes = 0;
+              for (let i = 0; i < totalChunks; i++) {
+                const c = job.downloadedChunks.get(i);
+                if (c) job.downloadedBytes += c.byteLength;
+              }
+              job.percent = Math.round((job.downloadedBytes / job.totalSize) * 100);
+
+              chrome.runtime.sendMessage({
+                type: "TAB_DOWNLOAD_PROGRESS",
+                id: job.id,
+                percent: job.percent,
+                downloaded: job.downloadedBytes,
+                total: job.totalSize,
+                speed: job.speed,
+                eta: job.eta
+              });
+
+              if (job.downloadedChunks.size === totalChunks && job.status === "downloading") {
+                const fullBuf = mergeChunksToBuffer(job.downloadedChunks, totalChunks);
+                const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, job.trimRange);
+
+                await job.writableStream.write(trimmedBuf);
+                await job.writableStream.close();
+
+                job.status = "complete";
+                job.percent = 100;
+                job.downloadedBytes = trimmedBuf.byteLength;
+
+                chrome.runtime.sendMessage({
+                  type: "TAB_DOWNLOAD_COMPLETE",
+                  id: job.id
+                });
+
+                refreshHistory();
+                processQueue();
+              } else if (job.launchedChunks < totalChunks) {
+                downloadLoop();
+              }
+              return;
+            }
 
             await writeSequentialChunks(job, currentChunkSize);
 
@@ -846,9 +997,11 @@ function mergeChunksToBuffer(chunks: Map<number, ArrayBuffer>, totalChunks: numb
 
 async function runFFmpegMerge(
   videoData: Uint8Array,
-  audioData: Uint8Array,
+  audioData: Uint8Array | null,
   ext: string,
-  audioExt?: string
+  audioExt?: string,
+  trimRange?: TrimRange,
+  subtitleBuffers?: { name: string; code: string; data: Uint8Array }[]
 ): Promise<Uint8Array> {
   // Retrieve cached FFmpeg core Blobs from IndexedDB
   const coreJSBlob = await getCachedFile("ffmpeg-core.js");
@@ -889,16 +1042,27 @@ async function runFFmpegMerge(
 
     window.addEventListener("message", handleResponse);
 
-    // Send the video, audio and FFmpeg core Blobs to the sandbox iframe.
-    // We transfer the video and audio array buffers for maximum zero-copy speed.
     const videoBuf = videoData.buffer;
-    const audioBuf = audioData.buffer;
+    const audioBuf = audioData ? audioData.buffer : null;
+
+    const subTransfers: ArrayBuffer[] = [];
+    const subPayloads = (subtitleBuffers || []).map((s) => {
+      const buf = s.data.buffer;
+      subTransfers.push(buf);
+      return { name: s.name, code: s.code, data: buf };
+    });
+
+    const transferables: ArrayBuffer[] = [videoBuf];
+    if (audioBuf) transferables.push(audioBuf);
+    transferables.push(...subTransfers);
 
     iframe.contentWindow!.postMessage(
       {
         type: "MERGE",
         videoData: videoBuf,
         audioData: audioBuf,
+        subtitleBuffers: subPayloads,
+        trimRange,
         coreJSBlob,
         coreWASMBlob,
         ffmpegWorkerBlob,
@@ -906,7 +1070,7 @@ async function runFFmpegMerge(
         audioExt
       },
       "*",
-      [videoBuf, audioBuf]
+      transferables
     );
   });
 }

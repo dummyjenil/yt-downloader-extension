@@ -98,7 +98,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
   if (message.type === "ADD_DOWNLOAD_JOB") {
-    const { url, title, ext, contentLength, audioUrl, audioSize, audioExt } = message;
+    const { url, title, ext, contentLength, audioUrl, audioSize, audioExt, trimRange, selectedSubtitles } = message;
 
     // Send response synchronously to close the channel cleanly and avoid warnings
     sendResponse({ success: true });
@@ -118,7 +118,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           contentLength,
           audioUrl,
           audioSize,
-          audioExt
+          audioExt,
+          trimRange,
+          selectedSubtitles
         }).catch(() => {});
         // Focus the existing tab
         chrome.tabs.update(existingTab.id, { active: true });
@@ -133,6 +135,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         if (audioExt) {
           downloadPageUrl += `&audioExt=${encodeURIComponent(audioExt)}`;
+        }
+        if (trimRange && trimRange.enabled) {
+          downloadPageUrl += `&trimStart=${trimRange.startTimeSec}&trimEnd=${trimRange.endTimeSec}`;
+        }
+        if (selectedSubtitles && selectedSubtitles.length > 0) {
+          downloadPageUrl += `&subtitles=${encodeURIComponent(JSON.stringify(selectedSubtitles))}`;
         }
         chrome.tabs.create({ url: downloadPageUrl, active: true });
       }
