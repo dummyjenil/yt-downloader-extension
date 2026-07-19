@@ -53,7 +53,7 @@ export async function setDNRHeadersForClient(clientName: "WEB" | "ANDROID_VR" | 
           ]
         },
         condition: {
-          urlFilter: "*://*.googlevideo.com/*ext_download=true*",
+          urlFilter: "*ext_download=true*",
           resourceTypes: [
             chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
             chrome.declarativeNetRequest.ResourceType.MEDIA,

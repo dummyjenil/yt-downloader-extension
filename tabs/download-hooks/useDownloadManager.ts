@@ -273,10 +273,7 @@ export function useDownloadManager() {
       // Find the next idle job that is not paused or cancelled
       const nextJob = jobs.find(j => j.status === "idle" && !j.paused && !j.cancelled);
       if (nextJob) {
-        // Only auto-start if we can write without a user gesture (i.e. default directory permission is granted)
-        if (await canAutoStart()) {
-          startSetup(nextJob.id);
-        }
+        startSetup(nextJob.id);
       }
     }
   };
@@ -399,23 +396,49 @@ export function useDownloadManager() {
       }
 
       // 2. Fallback to manual save file picker
-      if (!writableStream) {
-        if (!(window as any).showSaveFilePicker) {
-          throw new Error("Your browser does not support standard file streaming. Please use Chrome.");
-        }
-        const pickerOptions = {
-          suggestedName: `${job.title}.${job.ext}`,
-          types: [
-            {
-              description: `${job.ext.toUpperCase()} File`,
-              accept: {
-                [`video/${job.ext === "mp4" ? "mp4" : "webm"}`]: [`.${job.ext}`],
+      if (!writableStream && (window as any).showSaveFilePicker) {
+        try {
+          const pickerOptions = {
+            suggestedName: `${job.title}.${job.ext}`,
+            types: [
+              {
+                description: `${job.ext.toUpperCase()} File`,
+                accept: {
+                  [`video/${job.ext === "mp4" ? "mp4" : "webm"}`]: [`.${job.ext}`],
+                },
               },
-            },
-          ],
+            ],
+          };
+          const fileHandle = await (window as any).showSaveFilePicker(pickerOptions);
+          writableStream = await fileHandle.createWritable();
+        } catch (pickerErr) {
+          console.warn("Save file picker skipped or unavailable:", pickerErr);
+        }
+      }
+
+      // 3. In-memory / Blob stream fallback if no disk stream available
+      if (!writableStream) {
+        console.log("Using in-memory Blob stream fallback for download:", job.title);
+        const streamChunks: Uint8Array[] = [];
+        writableStream = {
+          write: async (chunk: ArrayBuffer | Uint8Array) => {
+            streamChunks.push(new Uint8Array(chunk));
+          },
+          close: async () => {
+            const blob = new Blob(streamChunks as BlobPart[], { type: `video/${job.ext === "mp4" ? "mp4" : "webm"}` });
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = `${job.title}.${job.ext}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+          },
+          abort: async () => {
+            streamChunks.length = 0;
+          }
         };
-        const fileHandle = await (window as any).showSaveFilePicker(pickerOptions);
-        writableStream = await fileHandle.createWritable();
       }
 
       // 3. Get total size if missing
@@ -549,14 +572,20 @@ export function useDownloadManager() {
 
               fetchChunkWithRetry(job, chunkIdx, totalVideoChunks, currentChunkSize)
                 .then((arrayBuffer) => {
-                  if (!arrayBuffer) return;
-                  job.adaptiveVideoChunks!.set(chunkIdx, arrayBuffer);
                   activeVideoFetches.delete(chunkIdx);
+                  if (!arrayBuffer) {
+                    if (!job.paused && !job.cancelled) fetchNext();
+                    return;
+                  }
+                  job.adaptiveVideoChunks!.set(chunkIdx, arrayBuffer);
                   job.videoDownloadedBytes! += arrayBuffer.byteLength;
                   updateProgress();
                   fetchNext();
                 })
-                .catch(reject);
+                .catch((err) => {
+                  activeVideoFetches.delete(chunkIdx);
+                  reject(err);
+                });
             }
           };
           fetchNext();
@@ -582,14 +611,20 @@ export function useDownloadManager() {
 
               fetchAudioChunkWithRetry(job, chunkIdx, totalAudioChunks, currentChunkSize)
                 .then((arrayBuffer) => {
-                  if (!arrayBuffer) return;
-                  job.adaptiveAudioChunks!.set(chunkIdx, arrayBuffer);
                   activeAudioFetches.delete(chunkIdx);
+                  if (!arrayBuffer) {
+                    if (!job.paused && !job.cancelled) fetchNext();
+                    return;
+                  }
+                  job.adaptiveAudioChunks!.set(chunkIdx, arrayBuffer);
                   job.audioDownloadedBytes! += arrayBuffer.byteLength;
                   updateProgress();
                   fetchNext();
                 })
-                .catch(reject);
+                .catch((err) => {
+                  activeAudioFetches.delete(chunkIdx);
+                  reject(err);
+                });
             }
           };
           fetchNext();
@@ -694,10 +729,13 @@ export function useDownloadManager() {
 
         fetchChunkWithRetry(job, chunkIdx, totalChunks, currentChunkSize)
           .then(async (arrayBuffer) => {
-            if (!arrayBuffer) return;
+            job.activeFetches.delete(chunkIdx);
+            if (!arrayBuffer) {
+              if (job.launchedChunks < totalChunks) downloadLoop();
+              return;
+            }
 
             job.downloadedChunks.set(chunkIdx, arrayBuffer);
-            job.activeFetches.delete(chunkIdx);
 
             if (job.trimRange && job.trimRange.enabled) {
               // Calculate progress for trimmed single-stream
@@ -789,7 +827,18 @@ export function useDownloadManager() {
   const fetchChunkWithRetry = async (job: JobState, chunkIdx: number, totalChunks: number, size: number): Promise<ArrayBuffer | null> => {
     const start = chunkIdx * size;
     const end = Math.min((chunkIdx + 1) * size, job.totalSize) - 1;
-    const chunkUrl = `${job.url}&range=${start}-${end}&ext_download=true`;
+
+    let chunkUrl = job.url;
+    if (chunkUrl.includes("range=")) {
+      chunkUrl = chunkUrl.replace(/([?&])range=[^&]*/, `$1range=${start}-${end}`);
+    } else {
+      const sep = chunkUrl.includes("?") ? "&" : "?";
+      chunkUrl = `${chunkUrl}${sep}range=${start}-${end}`;
+    }
+    if (!chunkUrl.includes("ext_download=true")) {
+      const sep = chunkUrl.includes("?") ? "&" : "?";
+      chunkUrl = `${chunkUrl}${sep}ext_download=true`;
+    }
 
     let attempt = 0;
     const maxAttempts = 5;
@@ -959,7 +1008,18 @@ const fetchAudioChunkWithRetry = async (
   if (!job.audioUrl) return null;
   const start = chunkIdx * size;
   const end = Math.min((chunkIdx + 1) * size, job.audioSize || 0) - 1;
-  const chunkUrl = `${job.audioUrl}&range=${start}-${end}&ext_download=true`;
+
+  let chunkUrl = job.audioUrl;
+  if (chunkUrl.includes("range=")) {
+    chunkUrl = chunkUrl.replace(/([?&])range=[^&]*/, `$1range=${start}-${end}`);
+  } else {
+    const sep = chunkUrl.includes("?") ? "&" : "?";
+    chunkUrl = `${chunkUrl}${sep}range=${start}-${end}`;
+  }
+  if (!chunkUrl.includes("ext_download=true")) {
+    const sep = chunkUrl.includes("?") ? "&" : "?";
+    chunkUrl = `${chunkUrl}${sep}ext_download=true`;
+  }
 
   let attempt = 0;
   const maxAttempts = 5;

@@ -29,7 +29,7 @@ export const extractPlaylistId = (url: string): string | null => {
 };
 
 export const formatBytes = (bytesStr: string | number | undefined) => {
-  if (!bytesStr) return "Unknown size";
+  if (bytesStr === undefined || bytesStr === null || bytesStr === "") return "Unknown size";
   const bytes = typeof bytesStr === "string" ? parseInt(bytesStr, 10) : bytesStr;
   if (isNaN(bytes)) return "Unknown size";
   if (bytes === 0) return "0 B";
