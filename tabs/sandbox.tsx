@@ -52,22 +52,18 @@ export default function SandboxPage() {
           URL.revokeObjectURL(workerBlobUrl);
         }
 
-        const videoName = `input_video.${ext}`;
+        const isAudioOnly = ext === "m4a" || ext === "mp3" || ext === "aac" || ext === "wav";
+        const videoName = isAudioOnly ? `input_audio.${ext}` : `input_video.${ext}`;
         const outputName = `output.${ext}`;
 
         // Write primary video/media file
         await ffmpeg.writeFile(videoName, new Uint8Array(videoData));
 
-        const ffmpegArgs: string[] = [];
-        ffmpegArgs.push("-i", videoName);
-
-        // Write optional audio file if present
         let audioName = "";
         const finalAudioExt = audioExt || (ext === "webm" ? "webm" : "m4a");
         if (audioData) {
           audioName = `input_audio.${finalAudioExt}`;
           await ffmpeg.writeFile(audioName, new Uint8Array(audioData));
-          ffmpegArgs.push("-i", audioName);
         }
 
         // Write optional subtitle tracks if present
@@ -78,28 +74,87 @@ export default function SandboxPage() {
             const subName = sub.name || `sub_${i}.srt`;
             await ffmpeg.writeFile(subName, new Uint8Array(sub.data));
             subFileNames.push(subName);
-            ffmpegArgs.push("-i", subName);
           }
         }
 
-        // Apply trimming (-ss and -to) if active
-        if (trimRange && trimRange.enabled) {
-          ffmpegArgs.push("-ss", String(trimRange.startTimeSec));
-          ffmpegArgs.push("-to", String(trimRange.endTimeSec));
+        const ffmpegArgs: string[] = [];
+        const isTrimming = trimRange && trimRange.enabled;
+        const vSeek = (isTrimming && trimRange.vSeek !== undefined) ? trimRange.vSeek : (isTrimming ? Math.max(0, trimRange.startTimeSec) : 0);
+        const aSeek = (isTrimming && trimRange.aSeek !== undefined) ? trimRange.aSeek : (isTrimming ? Math.max(0, trimRange.startTimeSec) : 0);
+        const durationSec = isTrimming ? Math.max(0.1, trimRange.endTimeSec - trimRange.startTimeSec) : 0;
+
+        // Input 0: Primary video/audio file (with -ss before -i for fast keyframe alignment)
+        if (isTrimming) {
+          ffmpegArgs.push("-ss", String(vSeek));
+        }
+        ffmpegArgs.push("-i", videoName);
+
+        // Input 1: Optional separate audio file
+        if (audioName) {
+          if (isTrimming) {
+            ffmpegArgs.push("-ss", String(aSeek));
+          }
+          ffmpegArgs.push("-i", audioName);
         }
 
-        // Video codec
-        ffmpegArgs.push("-c:v", "copy");
+        // Input 2+: Optional subtitle files (omit -ss before SRT inputs so subtitle timestamps align with video)
+        for (const subName of subFileNames) {
+          ffmpegArgs.push("-i", subName);
+        }
 
-        // Audio codec configuration
-        if (audioData) {
-          let audioCodec = "copy";
-          if (ext === "webm" && finalAudioExt !== "webm") {
-            audioCodec = "libopus";
-          } else if (ext === "mp4" && finalAudioExt === "webm") {
-            audioCodec = "aac";
+        // Output duration limit
+        if (isTrimming) {
+          ffmpegArgs.push("-t", String(durationSec));
+        }
+
+        // Explicit Stream Mapping
+        if (isAudioOnly) {
+          ffmpegArgs.push("-map", "0:a:0");
+        } else {
+          // Map video from input 0
+          ffmpegArgs.push("-map", "0:v:0");
+          // Map audio from input 1 (if separate audio stream) or input 0 (if embedded)
+          if (audioName) {
+            ffmpegArgs.push("-map", "1:a:0");
+          } else {
+            ffmpegArgs.push("-map", "0:a:0?");
           }
-          ffmpegArgs.push("-c:a", audioCodec);
+          // Map subtitles starting from input 2 (if separate audio was present) or input 1
+          const subInputStartIdx = audioName ? 2 : 1;
+          for (let i = 0; i < subFileNames.length; i++) {
+            ffmpegArgs.push("-map", `${subInputStartIdx + i}:s:0`);
+          }
+        }
+
+        // Codec & Bitstream configuration
+        if (isAudioOnly) {
+          if (isTrimming || (ext === "webm" && finalAudioExt !== "webm")) {
+            if (ext === "webm") {
+              ffmpegArgs.push("-c:a", "libopus");
+            } else if (ext === "m4a" || ext === "mp4" || ext === "aac") {
+              ffmpegArgs.push("-c:a", "aac");
+            } else {
+              ffmpegArgs.push("-c:a", "copy");
+            }
+          } else {
+            ffmpegArgs.push("-c:a", "copy");
+          }
+        } else {
+          // Stream copy video without re-encoding whole 1080p stream
+          ffmpegArgs.push("-c:v", "copy");
+          if (ext === "mp4" && isTrimming) {
+            ffmpegArgs.push("-bsf:v", "h264_mp4toannexb");
+          }
+
+          if (audioData || isTrimming) {
+            let audioCodec = "aac";
+            if (ext === "webm") {
+              audioCodec = "libopus";
+            }
+            ffmpegArgs.push("-c:a", audioCodec);
+          } else {
+            ffmpegArgs.push("-c:a", "copy");
+          }
         }
 
         // Subtitle codecs & metadata

@@ -1,5 +1,5 @@
 import { setDNRHeadersForClient } from "./background/dnr";
-import { fetchVideoInfo } from "./background/youtube-api";
+import { fetchVideoInfo } from "./background/youtube-video";
 import { downloadFFmpeg, isFFmpegInstalled } from "./utils/ffmpeg-helper";
 
 // Set default rules to ANDROID_VR when background loads
@@ -57,11 +57,11 @@ const activeDownloads = new Map<string, ActiveDownload>();
 
 // Broadcast message to popup and all tabs (YouTube content script overlays)
 function broadcastToAll(message: any) {
-  chrome.runtime.sendMessage(message).catch(() => {});
+  chrome.runtime.sendMessage(message).catch(() => { });
   chrome.tabs.query({}, (tabs) => {
     for (const tab of tabs) {
       if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+        chrome.tabs.sendMessage(tab.id, message).catch(() => { });
       }
     }
   });
@@ -98,7 +98,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
   if (message.type === "ADD_DOWNLOAD_JOB") {
-    const { url, title, ext, contentLength, audioUrl, audioSize, audioExt, trimRange, selectedSubtitles } = message;
+    const { url, title, ext, contentLength, audioUrl, audioSize, audioExt, initRange, indexRange, audioInitRange, audioIndexRange, trimRange, selectedSubtitles } = message;
 
     // Send response synchronously to close the channel cleanly and avoid warnings
     sendResponse({ success: true });
@@ -119,9 +119,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           audioUrl,
           audioSize,
           audioExt,
+          initRange,
+          indexRange,
+          audioInitRange,
+          audioIndexRange,
           trimRange,
           selectedSubtitles
-        }).catch(() => {});
+        }).catch(() => { });
         // Focus the existing tab
         chrome.tabs.update(existingTab.id, { active: true });
       } else {
@@ -135,6 +139,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         if (audioExt) {
           downloadPageUrl += `&audioExt=${encodeURIComponent(audioExt)}`;
+        }
+        if (initRange) {
+          downloadPageUrl += `&initRange=${encodeURIComponent(JSON.stringify(initRange))}`;
+        }
+        if (indexRange) {
+          downloadPageUrl += `&indexRange=${encodeURIComponent(JSON.stringify(indexRange))}`;
+        }
+        if (audioInitRange) {
+          downloadPageUrl += `&audioInitRange=${encodeURIComponent(JSON.stringify(audioInitRange))}`;
+        }
+        if (audioIndexRange) {
+          downloadPageUrl += `&audioIndexRange=${encodeURIComponent(JSON.stringify(audioIndexRange))}`;
         }
         if (trimRange && trimRange.enabled) {
           downloadPageUrl += `&trimStart=${trimRange.startTimeSec}&trimEnd=${trimRange.endTimeSec}`;
@@ -154,7 +170,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.query({}, (tabs) => {
       const existingTab = tabs.find(t => t.url && t.url.startsWith(targetUrl));
       if (existingTab && existingTab.id !== undefined) {
-        chrome.tabs.sendMessage(existingTab.id, message).catch(() => {});
+        chrome.tabs.sendMessage(existingTab.id, message).catch(() => { });
       }
     });
     sendResponse({ success: true });
@@ -237,7 +253,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         iconUrl: chrome.runtime.getURL("assets/icon.png"),
         title: "Download Complete",
         message: `${download.title}.${download.ext} has been successfully downloaded!`
-      }, () => {});
+      }, () => { });
     }
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
     return true;
@@ -268,7 +284,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         iconUrl: chrome.runtime.getURL("assets/icon.png"),
         title: "Download Failed",
         message: `Failed to download ${download.title}.${download.ext}: ${error}`
-      }, () => {});
+      }, () => { });
     }
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
     return true;

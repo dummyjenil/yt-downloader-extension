@@ -15,6 +15,11 @@ import { StreamRow } from "./components/StreamRow";
 import { Placeholder } from "./components/Placeholder";
 import { CustomFusionSelector } from "./components/CustomFusionSelector";
 
+// Popup Sub-Tabs
+import { PopupDashboardTab } from "./components/popup/PopupDashboardTab";
+import { PopupSettingsTab } from "./components/popup/PopupSettingsTab";
+import { PopupHistoryTab } from "./components/popup/PopupHistoryTab";
+
 function IndexPopup() {
   const [urlInput, setUrlInput] = useState("");
   const [videoId, setVideoId] = useState<string | null>(null);
@@ -63,7 +68,6 @@ function IndexPopup() {
   // Sync active downloads and local storage settings
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.runtime) {
-      // Get settings and history
       chrome.storage.local.get(["chunkSize", "concurrency", "downloadHistory"], (res) => {
         if (res.chunkSize) setChunkSize(res.chunkSize as number);
         if (res.concurrency) setConcurrency(res.concurrency as number);
@@ -74,7 +78,6 @@ function IndexPopup() {
         if (handle) setDefaultDirName(handle.name);
       }).catch(console.error);
 
-      // Fetch active downloads
       chrome.runtime.sendMessage({ type: "GET_ALL_DOWNLOADS" }, (response) => {
         if (response && response.downloads) {
           setDownloads(response.downloads);
@@ -105,7 +108,7 @@ function IndexPopup() {
           setError(chrome.runtime.lastError.message || "Failed to communicate with service worker.");
         } else if (response && response.success) {
           setVideoInfo(response.info);
-          setNavTab("streams"); // auto switch to streams extractor if info found
+          setNavTab("streams");
         } else {
           setError(response?.error || "Unable to extract stream URLs for this video.");
         }
@@ -147,7 +150,6 @@ function IndexPopup() {
       audioExt = customAudioStream.mimeType.includes("webm") ? "webm" : "m4a";
       ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
     } else if (category === "adaptive") {
-      // Direct pure video track download from YouTube server without auto audio fusion
       ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
     } else if (stream.mimeType.includes("webm")) {
       ext = "webm";
@@ -173,7 +175,6 @@ function IndexPopup() {
     const cleanTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, "_");
     const filename = `${cleanTitle}${suffix}`;
 
-    // Send command to background to open/reuse dashboard and start downloading
     chrome.runtime.sendMessage({
       type: "ADD_DOWNLOAD_JOB",
       url: stream.url,
@@ -183,11 +184,15 @@ function IndexPopup() {
       audioUrl: audioUrl,
       audioSize: audioSize ? String(audioSize) : "",
       audioExt: audioExt || "",
+      initRange: stream.initRange,
+      indexRange: stream.indexRange,
+      audioInitRange: customAudioStream?.initRange,
+      audioIndexRange: customAudioStream?.indexRange,
       trimRange: trimRange && trimRange.enabled ? trimRange : undefined,
       selectedSubtitles: selectedSubtitles
     });
 
-    setNavTab("dashboard"); // redirect to active dashboard tab
+    setNavTab("dashboard");
   };
 
   const handleSelectDirectory = async () => {
@@ -196,9 +201,7 @@ function IndexPopup() {
         alert("Your browser does not support directory picking. Please use Google Chrome.");
         return;
       }
-      const handle = await (window as any).showDirectoryPicker({
-        mode: "readwrite"
-      });
+      const handle = await (window as any).showDirectoryPicker({ mode: "readwrite" });
       await storeDirectoryHandle(handle);
       setDefaultDirName(handle.name);
     } catch (err: any) {
@@ -265,10 +268,8 @@ function IndexPopup() {
       </div>
 
       {/* RENDER VIEWS */}
-
       {navTab === "streams" && (
         <>
-          {/* Manual URL Input Form */}
           <UrlForm
             urlInput={urlInput}
             setUrlInput={setUrlInput}
@@ -276,7 +277,6 @@ function IndexPopup() {
             loading={loading}
           />
 
-          {/* Loading State Indicator */}
           {loading && (
             <div style={themeStyles.loader}>
               <style>{`
@@ -290,13 +290,10 @@ function IndexPopup() {
             </div>
           )}
 
-          {/* Error Notifications */}
           {error && <div style={themeStyles.errorText}>{error}</div>}
 
-          {/* Video Details Card */}
           {videoInfo && <VideoDetails videoInfo={videoInfo} />}
 
-          {/* Stream Tabs & Options List */}
           {videoInfo && (
             <>
               <StreamTabs activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -364,250 +361,28 @@ function IndexPopup() {
             </>
           )}
 
-          {/* Welcome Placeholder */}
           {!videoInfo && !loading && <Placeholder />}
         </>
       )}
 
       {navTab === "dashboard" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1 }}>
-          <h3 style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: 700 }}>Active Downloads</h3>
-          {activeDownloads.length === 0 ? (
-            <div style={{ padding: "40px 10px", textAlign: "center", color: "#71717a", fontSize: "12px" }}>
-              No active downloads running
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "420px", overflowY: "auto" }}>
-              {activeDownloads.map((job) => (
-                <div key={job.id} style={themeStyles.glassCard}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-                    <span style={{ fontSize: "12px", fontWeight: 600, color: "#f4f4f5", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", flex: 1 }}>
-                      {job.title}.{job.ext}
-                    </span>
-                    <div style={{ display: "flex", gap: "6px" }}>
-                      <button
-                        onClick={() => {
-                          chrome.runtime.sendMessage({
-                            type: job.status === "paused" ? "RESUME_DOWNLOAD" : "PAUSE_DOWNLOAD",
-                            id: job.id
-                          });
-                        }}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: job.status === "paused" ? "#10b981" : "#fbbf24",
-                          cursor: "pointer",
-                          padding: 0
-                        }}
-                      >
-                        {job.status === "paused" ? "▶" : "⏸"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          chrome.runtime.sendMessage({ type: "CANCEL_DOWNLOAD", id: job.id });
-                        }}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "#f43f5e",
-                          cursor: "pointer",
-                          padding: 0
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                  <div style={themeStyles.progressBarContainer}>
-                    <div
-                      style={{
-                        ...themeStyles.progressBarFill,
-                        width: `${job.percent}%`,
-                        background: job.status === "paused" ? "#fbbf24" : themeColors.accent
-                      }}
-                    />
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#a1a1aa", marginTop: "4px" }}>
-                    <span>{job.status === "paused" ? "Paused" : `${formatBytes(job.speed)}/s`}</span>
-                    <span>{job.percent}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <PopupDashboardTab activeDownloads={activeDownloads} />
       )}
 
       {navTab === "settings" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "14px", flex: 1 }}>
-          <h3 style={{ margin: "0", fontSize: "14px", fontWeight: 700 }}>Settings</h3>
-
-          {/* Directory Access */}
-          <div>
-            <span style={{ fontSize: "12px", fontWeight: 600, color: "#e4e4e7", display: "block", marginBottom: "4px" }}>
-              Default Folder
-            </span>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <button
-                onClick={handleSelectDirectory}
-                style={{
-                  ...themeStyles.button,
-                  padding: "6px 12px",
-                  fontSize: "11px",
-                  background: "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)"
-                }}
-              >
-                {defaultDirName ? "Change" : "Choose Folder"}
-              </button>
-              {defaultDirName && (
-                <button
-                  onClick={handleClearDirectory}
-                  style={{
-                    background: "rgba(244, 63, 94, 0.1)",
-                    border: "1px solid rgba(244, 63, 94, 0.2)",
-                    color: "#fda4af",
-                    borderRadius: "12px",
-                    padding: "6px 12px",
-                    fontSize: "11px",
-                    cursor: "pointer"
-                  }}
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            {defaultDirName && (
-              <span style={{ fontSize: "10px", color: "#a78bfa", marginTop: "4px", display: "block" }}>
-                Saving directly to: {defaultDirName}
-              </span>
-            )}
-          </div>
-
-          {/* Chunk Size Selector */}
-          <div>
-            <span style={{ fontSize: "12px", fontWeight: 600, color: "#e4e4e7", display: "block", marginBottom: "4px" }}>
-              Chunk Size
-            </span>
-            <select
-              value={chunkSize}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                setChunkSize(val);
-                chrome.storage.local.set({ chunkSize: val });
-              }}
-              style={{
-                background: "#18181b",
-                border: `1px solid ${themeColors.border}`,
-                borderRadius: "8px",
-                color: "#f4f4f5",
-                padding: "6px 10px",
-                fontSize: "11px",
-                width: "100%",
-                outline: "none"
-              }}
-            >
-              <option value={1 * 1024 * 1024}>1 MB</option>
-              <option value={2 * 1024 * 1024}>2 MB</option>
-              <option value={5 * 1024 * 1024}>5 MB (Default)</option>
-              <option value={10 * 1024 * 1024}>10 MB</option>
-              <option value={20 * 1024 * 1024}>20 MB</option>
-            </select>
-          </div>
-
-          {/* Concurrency limit */}
-          <div>
-            <span style={{ fontSize: "12px", fontWeight: 600, color: "#e4e4e7", display: "block", marginBottom: "4px" }}>
-              Parallel Chunk Fetches
-            </span>
-            <select
-              value={concurrency}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                setConcurrency(val);
-                chrome.storage.local.set({ concurrency: val });
-              }}
-              style={{
-                background: "#18181b",
-                border: `1px solid ${themeColors.border}`,
-                borderRadius: "8px",
-                color: "#f4f4f5",
-                padding: "6px 10px",
-                fontSize: "11px",
-                width: "100%",
-                outline: "none"
-              }}
-            >
-              <option value={1}>1 (Sequential)</option>
-              <option value={2}>2 Parallel Chunks</option>
-              <option value={3}>3 Parallel Chunks</option>
-              <option value={5}>5 Parallel Chunks</option>
-            </select>
-          </div>
-        </div>
+        <PopupSettingsTab
+          defaultDirName={defaultDirName}
+          chunkSize={chunkSize}
+          concurrency={concurrency}
+          handleSelectDirectory={handleSelectDirectory}
+          handleClearDirectory={handleClearDirectory}
+          setChunkSize={setChunkSize}
+          setConcurrency={setConcurrency}
+        />
       )}
 
       {navTab === "history" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ margin: "0", fontSize: "14px", fontWeight: 700 }}>History</h3>
-            {historyList.length > 0 && (
-              <button
-                onClick={clearHistory}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#f43f5e",
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  padding: 0
-                }}
-              >
-                Clear All
-              </button>
-            )}
-          </div>
-          {historyList.length === 0 ? (
-            <div style={{ padding: "40px 10px", textAlign: "center", color: "#71717a", fontSize: "12px" }}>
-              No history found
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "420px", overflowY: "auto" }}>
-              {historyList.map((item, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    background: "rgba(255, 255, 255, 0.01)",
-                    border: `1px solid ${themeColors.border}`,
-                    borderRadius: "10px",
-                    padding: "8px 10px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center"
-                  }}
-                >
-                  <div style={{ flex: 1, overflow: "hidden", paddingRight: "8px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: 600, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                      {item.title}.{item.ext}
-                    </div>
-                    <div style={{ fontSize: "9px", color: "#71717a", marginTop: "2px" }}>
-                      {formatBytes(item.total)}
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: "9px",
-                      fontWeight: 600,
-                      color: item.status === "complete" ? "#10b981" : "#f43f5e"
-                    }}
-                  >
-                    {item.status === "complete" ? "Success" : "Failed"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <PopupHistoryTab historyList={historyList} clearHistory={clearHistory} />
       )}
     </div>
   );

@@ -41,14 +41,15 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({ totalDurationSec, 
   };
 
   const startSec = parseTimeToSec(startStr);
-  const endSec = Math.min(totalDurationSec || 999999, parseTimeToSec(endStr));
+  const parsedEndSec = parseTimeToSec(endStr);
+  const endSec = totalDurationSec > 0 ? Math.min(totalDurationSec, parsedEndSec) : parsedEndSec;
   const trimmedDuration = Math.max(0, endSec - startSec);
 
   useEffect(() => {
     onChange({
       enabled,
       startTimeSec: startSec,
-      endTimeSec: endSec > startSec ? endSec : totalDurationSec
+      endTimeSec: endSec > startSec ? endSec : (totalDurationSec || endSec)
     });
   }, [enabled, startStr, endStr, totalDurationSec]);
 

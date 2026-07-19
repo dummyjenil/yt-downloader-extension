@@ -208,7 +208,9 @@ export async function fetchVideoInfo(videoId: string) {
           url: parseFormatUrl(f),
           mimeType: f.mimeType,
           qualityLabel: f.qualityLabel,
-          contentLength: f.contentLength
+          contentLength: f.contentLength,
+          initRange: f.initRange,
+          indexRange: f.indexRange
         }))
         .filter((f: any) => !!f.url);
 
@@ -228,7 +230,9 @@ export async function fetchVideoInfo(videoId: string) {
             langCode: langCode,
             displayName: audioTrack.displayName,
             audioTrackId: rawTrackId,
-            isDefaultAudio: !!audioTrack.audioIsDefault
+            isDefaultAudio: !!audioTrack.audioIsDefault,
+            initRange: f.initRange,
+            indexRange: f.indexRange
           };
         })
         .filter((f: any) => !!f.url);

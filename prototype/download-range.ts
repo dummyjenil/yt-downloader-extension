@@ -3,7 +3,7 @@ import * as path from "path";
 import { execSync } from "child_process";
 
 // Target Configuration
-const VIDEO_ID = "xiz_U2eYT_U";
+const VIDEO_ID = "C8QYVwX0M6g";
 const START_TIME_SEC = 65; // 1:05 (1 min 5 sec)
 const END_TIME_SEC = 85;   // 1:25 (1 min 25 sec)
 const TARGET_QUALITY = "720p";
@@ -47,8 +47,8 @@ async function getApiKey(): Promise<string> {
     const response = await fetch("https://www.youtube.com/app_shell");
     if (!response.ok) throw new Error(`Status ${response.status}`);
     const text = await response.text();
-    const match = text.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/) || 
-                  text.match(/INNERTUBE_API_KEY":"([^"]+)"/);
+    const match = text.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/) ||
+      text.match(/INNERTUBE_API_KEY":"([^"]+)"/);
     if (match && match[1]) return match[1];
     throw new Error("INNERTUBE_API_KEY not found in app_shell");
   } catch (err) {
@@ -125,10 +125,10 @@ function parseSidx(buf: Buffer, indexRangeEnd: number): ParsedSidx {
   let offset = 0;
   const type = buf.subarray(offset + 4, offset + 8).toString("ascii");
   if (type !== "sidx") throw new Error("Provided buffer is not a valid sidx box");
-  
+
   const version = buf.readUInt8(offset + 8);
   const timescale = buf.readUInt32BE(offset + 16);
-  
+
   offset += 20;
   let earliestPresentationTime = 0;
   let firstOffset = 0;
@@ -141,7 +141,7 @@ function parseSidx(buf: Buffer, indexRangeEnd: number): ParsedSidx {
     firstOffset = Number(buf.readBigUInt64BE(offset + 8));
     offset += 16;
   }
-  
+
   offset += 2; // reserved
   const referenceCount = buf.readUInt16BE(offset);
   offset += 2;
@@ -272,15 +272,15 @@ async function main() {
   console.log(`Total Video Duration: ${totalDurationSec}s (${(totalDurationSec / 60).toFixed(2)} mins)`);
 
   const adaptiveFormats: any[] = playerResponse.streamingData?.adaptiveFormats || [];
-  
+
   // Select 720p MP4 format
   const vRaw = adaptiveFormats.find(f => f.qualityLabel?.includes(TARGET_QUALITY) && f.mimeType?.includes("video/mp4")) ||
-               adaptiveFormats.find(f => f.qualityLabel?.includes(TARGET_QUALITY));
+    adaptiveFormats.find(f => f.qualityLabel?.includes(TARGET_QUALITY));
   if (!vRaw) throw new Error(`Could not find 720p video format`);
 
   // Select MP4 audio format (itag 140)
   const aRaw = adaptiveFormats.find(f => f.itag === 140) ||
-               adaptiveFormats.find(f => f.mimeType?.includes("audio/mp4"));
+    adaptiveFormats.find(f => f.mimeType?.includes("audio/mp4"));
   if (!aRaw) throw new Error(`Could not find MP4 audio format`);
 
   const vFormat: FormatInfo = {
@@ -315,7 +315,7 @@ async function main() {
   const vInitBuf = await fetchByteRangeSingle(vFormat.url, parseInt(vFormat.initRange.start, 10), parseInt(vFormat.initRange.end, 10));
   const vIndexBuf = await fetchByteRangeSingle(vFormat.url, parseInt(vFormat.indexRange.start, 10), parseInt(vFormat.indexRange.end, 10));
   const vSidx = parseSidx(vIndexBuf, parseInt(vFormat.indexRange.end, 10));
-  
+
   const vTargets = vSidx.subsegments.filter(s => s.endTimeSec >= START_TIME_SEC && s.startTimeSec <= END_TIME_SEC);
   if (vTargets.length === 0) throw new Error("No video subsegments match time range");
 
