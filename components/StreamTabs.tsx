@@ -1,5 +1,4 @@
 import React from "react";
-import { getTabButtonStyle, themeStyles } from "../styles/theme";
 
 interface StreamTabsProps {
   activeTab: "video" | "audio" | "adaptive" | "fusion" | "subtitle";
@@ -10,38 +9,29 @@ export const StreamTabs: React.FC<StreamTabsProps> = ({
   activeTab,
   setActiveTab
 }) => {
+  const tabs: { id: "video" | "audio" | "adaptive" | "subtitle" | "fusion"; label: string }[] = [
+    { id: "video", label: "Standard MP4" },
+    { id: "audio", label: "Audio Only" },
+    { id: "adaptive", label: "Video Only (HD)" },
+    { id: "subtitle", label: "Subtitles (SRT)" },
+    { id: "fusion", label: "Custom Fusion" }
+  ];
+
   return (
-    <div style={themeStyles.tabs}>
-      <button
-        onClick={() => setActiveTab("video")}
-        style={getTabButtonStyle(activeTab === "video")}
-      >
-        Standard MP4
-      </button>
-      <button
-        onClick={() => setActiveTab("audio")}
-        style={getTabButtonStyle(activeTab === "audio")}
-      >
-        Audio Only
-      </button>
-      <button
-        onClick={() => setActiveTab("adaptive")}
-        style={getTabButtonStyle(activeTab === "adaptive")}
-      >
-        Video Only (HD)
-      </button>
-      <button
-        onClick={() => setActiveTab("subtitle")}
-        style={getTabButtonStyle(activeTab === "subtitle")}
-      >
-        Subtitles (SRT)
-      </button>
-      <button
-        onClick={() => setActiveTab("fusion")}
-        style={getTabButtonStyle(activeTab === "fusion")}
-      >
-        Custom Fusion
-      </button>
+    <div className="flex gap-1.5 mb-3.5 bg-white/[0.02] p-1 rounded-xl border border-white/10 overflow-x-auto no-scrollbar">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => setActiveTab(t.id)}
+          className={`flex-1 min-w-[70px] py-1.5 px-2 text-[10px] font-semibold rounded-lg transition-all text-center whitespace-nowrap ${
+            activeTab === t.id
+              ? "bg-white/10 text-violet-300 border border-violet-500/30 shadow-sm"
+              : "text-zinc-400 border border-transparent hover:text-zinc-200 hover:bg-white/[0.03]"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 };

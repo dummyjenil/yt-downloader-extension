@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import type { VideoInfo, StreamFormat, CaptionTrack, TrimRange } from "../types/youtube";
 import { formatBytes } from "../utils/youtube";
-import { themeColors, themeStyles } from "../styles/theme";
 
 interface CustomFusionSelectorProps {
   videoInfo: VideoInfo;
@@ -44,7 +43,7 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
 
   if (!selectedVideo || !selectedAudio) {
     return (
-      <div style={{ padding: "20px", textAlign: "center", color: "#71717a", fontSize: "12px" }}>
+      <div className="p-4 text-center text-zinc-500 text-xs bg-white/[0.02] border border-white/5 rounded-xl">
         No adaptive formats available for custom fusion.
       </div>
     );
@@ -99,135 +98,107 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "16px",
-        background: "rgba(255, 255, 255, 0.02)",
-        border: "1px solid rgba(255, 255, 255, 0.06)",
-        borderRadius: "16px",
-        padding: "20px",
-        boxSizing: "border-box",
-        marginTop: "8px"
-      }}
-    >
-      <h4 style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#e4e4e7" }}>
-        Custom Multi-Stream Fusion (Video + Audio + Subtitles)
-      </h4>
-
-      {/* Video Quality Selection */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <span style={{ fontSize: "11px", fontWeight: 500, color: "#a1a1aa" }}>Select Video Track:</span>
-        <select
-          value={selectedVideoIdx}
-          onChange={(e) => setSelectedVideoIdx(parseInt(e.target.value, 10))}
-          style={{
-            background: "#18181b",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            borderRadius: "10px",
-            color: "#f4f4f5",
-            padding: "10px",
-            fontSize: "12px",
-            outline: "none",
-            width: "100%",
-            cursor: "pointer"
-          }}
-        >
-          {videoStreams.map((stream, idx) => {
-            const size = formatBytes(stream.contentLength);
-            const container = getFormatLabel(stream.mimeType);
-            const codec = getCodecLabel(stream.mimeType);
-            return (
-              <option key={stream.itag} value={idx}>
-                {stream.qualityLabel} ({container} • {codec} • {size})
-              </option>
-            );
-          })}
-        </select>
+    <div className="flex flex-col gap-3 bg-gradient-to-b from-white/[0.04] to-white/[0.01] border border-white/10 rounded-2xl p-3.5 shadow-xl my-2">
+      {/* Header Badge */}
+      <div className="flex items-center justify-between pb-2 border-b border-white/10">
+        <span className="text-xs font-bold bg-gradient-to-r from-violet-300 via-purple-300 to-rose-300 bg-clip-text text-transparent">
+          Custom Multi-Stream Fusion
+        </span>
+        <span className="text-[9px] font-semibold bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full border border-violet-500/30 uppercase tracking-wider">
+          FFmpeg Engine
+        </span>
       </div>
 
-      {/* Audio Quality & Language Selection */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-        <span style={{ fontSize: "11px", fontWeight: 500, color: "#a1a1aa" }}>Select Audio Track (Multi-Language Enabled):</span>
-        <select
-          value={selectedAudioIdx}
-          onChange={(e) => setSelectedAudioIdx(parseInt(e.target.value, 10))}
-          style={{
-            background: "#18181b",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            borderRadius: "10px",
-            color: "#f4f4f5",
-            padding: "10px",
-            fontSize: "12px",
-            outline: "none",
-            width: "100%",
-            cursor: "pointer"
-          }}
-        >
-          {audioStreams.map((stream, idx) => {
-            const size = formatBytes(stream.contentLength);
-            const container = getFormatLabel(stream.mimeType);
-            const kbps = Math.round((stream.bitrate || 0) / 1000);
-            const langLabel = stream.displayName || (stream.langCode ? `[${stream.langCode}]` : "Default Audio");
-            return (
-              <option key={`${stream.itag}_${stream.langCode || idx}`} value={idx}>
-                {langLabel} - {kbps} kbps ({container} • {size})
-              </option>
-            );
-          })}
-        </select>
+      {/* Video Quality Select */}
+      <div className="flex flex-col gap-1">
+        <label className="text-[10px] font-medium text-zinc-400 flex justify-between">
+          <span>Video Track</span>
+          <span className="text-zinc-500 font-mono">{getCodecLabel(selectedVideo.mimeType)}</span>
+        </label>
+        <div className="relative">
+          <select
+            value={selectedVideoIdx}
+            onChange={(e) => setSelectedVideoIdx(parseInt(e.target.value, 10))}
+            className="w-full appearance-none bg-zinc-900 hover:bg-zinc-850 border border-white/10 hover:border-violet-500/40 rounded-xl text-zinc-100 pl-3 pr-8 py-2 text-xs outline-none focus:ring-2 focus:ring-violet-500/30 transition-all cursor-pointer font-sans truncate"
+          >
+            {videoStreams.map((stream, idx) => {
+              const size = formatBytes(stream.contentLength);
+              const container = getFormatLabel(stream.mimeType);
+              return (
+                <option key={stream.itag} value={idx} className="bg-zinc-900 text-zinc-100 py-1">
+                  {stream.qualityLabel || "HD"} • {container} ({size})
+                </option>
+              );
+            })}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-400">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </div>
+        </div>
       </div>
 
-      {/* Multi-Select Subtitles Fusion */}
+      {/* Audio Quality Select */}
+      <div className="flex flex-col gap-1">
+        <label className="text-[10px] font-medium text-zinc-400 flex justify-between">
+          <span>Audio Track</span>
+          <span className="text-zinc-500">{audioStreams.length} Available</span>
+        </label>
+        <div className="relative">
+          <select
+            value={selectedAudioIdx}
+            onChange={(e) => setSelectedAudioIdx(parseInt(e.target.value, 10))}
+            className="w-full appearance-none bg-zinc-900 hover:bg-zinc-850 border border-white/10 hover:border-violet-500/40 rounded-xl text-zinc-100 pl-3 pr-8 py-2 text-xs outline-none focus:ring-2 focus:ring-violet-500/30 transition-all cursor-pointer font-sans truncate"
+          >
+            {audioStreams.map((stream, idx) => {
+              const size = formatBytes(stream.contentLength);
+              const container = getFormatLabel(stream.mimeType);
+              const kbps = Math.round((stream.bitrate || 0) / 1000);
+              const langLabel = stream.displayName || (stream.langCode ? `[${stream.langCode}]` : "Default Audio");
+              return (
+                <option key={`${stream.itag}_${stream.langCode || idx}`} value={idx} className="bg-zinc-900 text-zinc-100 py-1">
+                  {langLabel} • {kbps} kbps • {container} ({size})
+                </option>
+              );
+            })}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-400">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Multi-Select Subtitles */}
       {captionTracks.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "11px", fontWeight: 500, color: "#a1a1aa" }}>
-              Fuse Subtitle Tracks (Multi-Select):
-            </span>
-            <span style={{ fontSize: "10px", color: "#c084fc" }}>
-              {selectedSubtitleCodes.length} selected
-            </span>
+        <div className="flex flex-col gap-1.5 pt-1">
+          <div className="flex justify-between items-center text-[10px]">
+            <span className="font-medium text-zinc-400">Subtitles (Multi-Select):</span>
+            <span className="text-violet-300 font-semibold">{selectedSubtitleCodes.length} selected</span>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "6px",
-              maxHeight: "120px",
-              overflowY: "auto",
-              background: "#121215",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              borderRadius: "10px",
-              padding: "8px 10px"
-            }}
-          >
+          <div className="flex flex-col gap-1 max-h-24 overflow-y-auto bg-zinc-950/80 border border-white/10 rounded-xl p-2 no-scrollbar">
             {captionTracks.map((track) => {
               const isChecked = selectedSubtitleCodes.includes(track.code);
               return (
                 <label
                   key={track.code}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    fontSize: "12px",
-                    color: isChecked ? "#f4f4f5" : "#a1a1aa",
-                    cursor: "pointer",
-                    userSelect: "none"
-                  }}
+                  className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs cursor-pointer select-none transition-colors ${
+                    isChecked ? "bg-violet-500/15 text-zinc-100 font-medium border border-violet-500/30" : "text-zinc-400 hover:bg-white/5"
+                  }`}
                 >
                   <input
                     type="checkbox"
                     checked={isChecked}
                     onChange={() => toggleSubtitle(track.code)}
-                    style={{ accentColor: "#8b5cf6", cursor: "pointer" }}
+                    className="accent-violet-500 rounded cursor-pointer"
                   />
-                  <span>
-                    {track.name} <span style={{ fontSize: "10px", opacity: 0.7 }}>[{track.code}]</span>
+                  <span className="truncate flex-1">
+                    {track.name}
                   </span>
+                  <span className="text-[9px] text-zinc-500 uppercase font-mono">[{track.code}]</span>
                 </label>
               );
             })}
@@ -237,73 +208,37 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
 
       {/* Mismatched Container Hint */}
       {!containersMatch && (
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#fbbf24",
-            background: "rgba(245, 158, 11, 0.04)",
-            border: "1px solid rgba(245, 158, 11, 0.1)",
-            borderRadius: "10px",
-            padding: "10px 12px",
-            lineHeight: 1.4
-          }}
-        >
-          ⚠️ <strong>Format Mismatch:</strong> You've selected an {getFormatLabel(selectedVideo.mimeType)} video with an {getFormatLabel(selectedAudio.mimeType)} audio. FFmpeg will run, but matching formats (e.g. MP4+MP4 or WebM+WebM) merge much faster.
+        <div className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2 leading-relaxed">
+          ⚠️ <strong>Format Mismatch:</strong> {getFormatLabel(selectedVideo.mimeType)} video + {getFormatLabel(selectedAudio.mimeType)} audio. Merging matching formats is faster.
         </div>
       )}
 
-      {/* Summary Box */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          background: "rgba(255, 255, 255, 0.015)",
-          border: "1px solid rgba(255, 255, 255, 0.04)",
-          borderRadius: "10px",
-          padding: "10px 12px"
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-          <span style={{ fontSize: "10px", color: "#71717a" }}>Total Est. Size</span>
-          <span style={{ fontSize: "13px", fontWeight: 600, color: "#c084fc" }}>
-            {formatBytes(totalSize)}
-          </span>
+      {/* Output Specs & Download Action */}
+      <div className="bg-zinc-950/60 border border-white/5 rounded-xl p-2.5 flex items-center justify-between">
+        <div className="flex flex-col">
+          <span className="text-[9px] text-zinc-500 font-medium">Est. File Size</span>
+          <span className="text-xs font-bold text-violet-300">{formatBytes(totalSize)}</span>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "flex-end" }}>
-          <span style={{ fontSize: "10px", color: "#71717a" }}>Container Result</span>
-          <span style={{ fontSize: "11px", fontWeight: 500, color: "#e4e4e7" }}>
-            {isVideoWebm ? "WebM Video" : "MP4 Video"} {selectedSubtitleCodes.length > 0 ? `+ ${selectedSubtitleCodes.length} Sub` : ""}
+        <div className="flex flex-col items-end">
+          <span className="text-[9px] text-zinc-500 font-medium">Container Output</span>
+          <span className="text-xs font-medium text-zinc-200">
+            {isVideoWebm ? "WebM Video" : "MP4 Video"}
           </span>
         </div>
       </div>
 
-      {/* Download Action Button */}
       <button
         onClick={triggerDownload}
         disabled={isDownloading}
-        style={{
-          width: "100%",
-          background: isDownloading ? "rgba(255, 255, 255, 0.03)" : "linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)",
-          border: isDownloading ? "1px solid rgba(255, 255, 255, 0.06)" : "none",
-          color: isDownloading ? "#a1a1aa" : "white",
-          padding: "12px",
-          borderRadius: "12px",
-          fontSize: "12px",
-          fontWeight: 600,
-          cursor: isDownloading ? "not-allowed" : "pointer",
-          transition: "all 0.2s",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: "8px",
-          boxShadow: isDownloading ? "none" : "0 4px 15px rgba(124, 58, 237, 0.2)"
-        }}
+        className={`w-full py-2.5 px-3 rounded-xl text-xs font-semibold transition-all flex justify-center items-center gap-2 ${
+          isDownloading
+            ? "bg-white/[0.03] border border-white/10 text-zinc-400 cursor-not-allowed"
+            : "bg-gradient-to-r from-rose-500 via-purple-600 to-violet-600 hover:from-rose-400 hover:to-violet-500 text-white shadow-lg shadow-purple-900/30 active:scale-95 cursor-pointer"
+        }`}
       >
         {isDownloading ? (
           <>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
-              <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.2)"></circle>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-spin text-purple-400">
               <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
             </svg>
             Downloading & Merging...
@@ -313,11 +248,10 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M19 12l-7 7-7-7" />
             </svg>
-            FUSE & DOWNLOAD ({selectedSubtitleCodes.length} Subtitles)
+            Fuse & Download
           </>
         )}
       </button>
     </div>
   );
 };
-

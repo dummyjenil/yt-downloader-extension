@@ -1,6 +1,5 @@
 import React from "react";
 import { formatBytes } from "../../utils/youtube";
-import { themeColors } from "../../styles/theme";
 
 interface PopupHistoryTabProps {
   historyList: any[];
@@ -9,59 +8,41 @@ interface PopupHistoryTabProps {
 
 export const PopupHistoryTab: React.FC<PopupHistoryTabProps> = ({ historyList, clearHistory }) => {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: "0", fontSize: "14px", fontWeight: 700 }}>History</h3>
+    <div className="flex flex-col gap-2.5 flex-1">
+      <div className="flex justify-between items-center">
+        <h3 className="text-xs font-bold text-zinc-200">History</h3>
         {historyList.length > 0 && (
           <button
             onClick={clearHistory}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#f43f5e",
-              fontSize: "10px",
-              fontWeight: 600,
-              cursor: "pointer",
-              padding: 0
-            }}
+            className="text-rose-400 hover:text-rose-300 text-[10px] font-semibold transition-colors"
           >
             Clear All
           </button>
         )}
       </div>
       {historyList.length === 0 ? (
-        <div style={{ padding: "40px 10px", textAlign: "center", color: "#71717a", fontSize: "12px" }}>
+        <div className="py-10 text-center text-zinc-500 text-xs">
           No history found
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "420px", overflowY: "auto" }}>
+        <div className="flex flex-col gap-2 max-h-[420px] overflow-y-auto no-scrollbar">
           {historyList.map((item, idx) => (
             <div
               key={idx}
-              style={{
-                background: "rgba(255, 255, 255, 0.01)",
-                border: `1px solid ${themeColors.border}`,
-                borderRadius: "10px",
-                padding: "8px 10px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}
+              className="bg-white/[0.015] border border-white/10 rounded-xl p-2.5 flex justify-between items-center"
             >
-              <div style={{ flex: 1, overflow: "hidden", paddingRight: "8px" }}>
-                <div style={{ fontSize: "11px", fontWeight: 600, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+              <div className="flex-1 overflow-hidden pr-2">
+                <div className="text-xs font-semibold text-zinc-200 truncate">
                   {item.title}.{item.ext}
                 </div>
-                <div style={{ fontSize: "9px", color: "#71717a", marginTop: "2px" }}>
+                <div className="text-[9px] text-zinc-500 mt-0.5">
                   {formatBytes(item.total)}
                 </div>
               </div>
               <span
-                style={{
-                  fontSize: "9px",
-                  fontWeight: 600,
-                  color: item.status === "complete" ? "#10b981" : "#f43f5e"
-                }}
+                className={`text-[9px] font-semibold ${
+                  item.status === "complete" ? "text-emerald-400" : "text-rose-400"
+                }`}
               >
                 {item.status === "complete" ? "Success" : "Failed"}
               </span>

@@ -1,10 +1,10 @@
 import type { PlasmoCSConfig } from "plasmo";
 import React, { useEffect, useState } from "react";
+import styleText from "data-text:../styles/globals.css";
 import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "../types/youtube";
 import { extractVideoId } from "../utils/youtube";
 
-// Subcomponents and Styles
-import { YOUTUBE_OVERLAY_STYLES } from "./youtube/youtube-styles";
+// Subcomponents
 import { FAB } from "./youtube/FAB";
 import { VideoDetailCard } from "./youtube/VideoDetailCard";
 import { ActiveDownloads } from "./youtube/ActiveDownloads";
@@ -13,6 +13,12 @@ import { VideoOptions } from "./youtube/VideoOptions";
 // Content Script Configuration to run on all YouTube domains
 export const config: PlasmoCSConfig = {
   matches: ["*://*.youtube.com/*"]
+};
+
+export const getStyle = () => {
+  const style = document.createElement("style");
+  style.textContent = styleText;
+  return style;
 };
 
 export default function YoutubeOverlay() {
@@ -128,7 +134,6 @@ export default function YoutubeOverlay() {
       audioExt = customAudioStream.mimeType.includes("webm") ? "webm" : "m4a";
       ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
     } else if (category === "adaptive") {
-      // Direct pure video track download from YouTube server without auto audio fusion
       ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
     } else if (stream.mimeType.includes("webm")) {
       ext = "webm";
@@ -154,7 +159,6 @@ export default function YoutubeOverlay() {
     const cleanTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, "_");
     const filename = `${cleanTitle}${suffix}`;
 
-    // Send command to background to add download job
     if (typeof chrome !== "undefined" && chrome.runtime) {
       chrome.runtime.sendMessage({
         type: "ADD_DOWNLOAD_JOB",
@@ -174,10 +178,8 @@ export default function YoutubeOverlay() {
     }
   };
 
-  // If we're not on a watch page, render nothing
   if (!videoId) return null;
 
-  // Find if there is an active download matching the current video title
   const activeJobs = downloads.filter((d) => d.status === "downloading" || d.status === "paused");
   const cleanTitleForMatch = videoInfo ? videoInfo.title.replace(/[\\/:*?"<>|]/g, "_") : "";
   const currentVideoJob = activeJobs.find(
@@ -188,7 +190,6 @@ export default function YoutubeOverlay() {
   const currentDownloadPercent = currentVideoJob ? currentVideoJob.percent : null;
   const currentDownloadStatus = currentVideoJob ? currentVideoJob.status : null;
 
-  // Circular progress calculations
   const radius = 28;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = currentDownloadPercent !== null
@@ -196,10 +197,7 @@ export default function YoutubeOverlay() {
     : circumference;
 
   return (
-    <div className="ytd-overlay-root">
-      {/* Dynamic CSS Stylesheet scoped in Shadow DOM */}
-      <style>{YOUTUBE_OVERLAY_STYLES}</style>
-
+    <div className="font-sans text-zinc-100">
       {/* Floating Action Button (FAB) + Progress Circle */}
       <FAB
         onClick={() => {
@@ -218,19 +216,22 @@ export default function YoutubeOverlay() {
 
       {/* Modal Dialog Popup */}
       {showDialog && (
-        <div className="ytd-backdrop" onClick={() => setShowDialog(false)}>
-          <div className="ytd-dialog" style={{ maxWidth: "420px" }} onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-md flex items-center justify-center z-[99999999] animate-fadeIn" onClick={() => setShowDialog(false)}>
+          <div className="w-[90%] max-w-[420px] bg-zinc-900/95 border border-white/10 rounded-3xl shadow-2xl p-6 flex flex-col box-border overflow-hidden animate-slideUp" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="ytd-dialog-header">
-              <div className="ytd-dialog-title-area">
-                <h3 className="ytd-dialog-title">
+            <div className="flex justify-between items-start mb-5">
+              <div className="flex-1 pr-3">
+                <h3 className="text-sm font-bold m-0 mb-1 leading-snug text-zinc-100 line-clamp-2">
                   {videoInfo ? videoInfo.title : "Extracting Video Streams"}
                 </h3>
-                <p className="ytd-dialog-subtitle">
+                <p className="text-[11px] text-zinc-400 m-0 font-medium">
                   {videoInfo ? `by ${videoInfo.author}` : "Please wait..."}
                 </p>
               </div>
-              <button className="ytd-close-btn" onClick={() => setShowDialog(false)}>
+              <button
+                className="w-8 h-8 rounded-full bg-white/[0.03] hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-zinc-100 flex items-center justify-center cursor-pointer transition-all hover:rotate-90 p-0 shrink-0"
+                onClick={() => setShowDialog(false)}
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -245,17 +246,20 @@ export default function YoutubeOverlay() {
 
             {/* Loader State */}
             {loading && (
-              <div className="ytd-loader-wrapper">
-                <div className="ytd-spinner"></div>
+              <div className="flex flex-col items-center justify-center py-8 text-zinc-400 text-xs">
+                <div className="w-6 h-6 border-2 border-white/5 border-t-purple-400 rounded-full animate-spin mb-3"></div>
                 <span>Parsing InnerTube streaming configuration...</span>
               </div>
             )}
 
             {/* Error State */}
             {error && (
-              <div className="ytd-error">
+              <div className="text-xs text-rose-400 leading-relaxed p-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl mt-2 text-center">
                 <div>{error}</div>
-                <button className="ytd-error-btn" onClick={() => fetchInfo(videoId!)}>
+                <button
+                  className="mt-2.5 bg-rose-500 hover:bg-rose-600 text-white px-3.5 py-1.5 rounded-xl text-[11px] font-semibold transition-colors cursor-pointer"
+                  onClick={() => fetchInfo(videoId!)}
+                >
                   Retry
                 </button>
               </div>

@@ -42,47 +42,38 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
     ? Math.max(0.005, Math.min(1.0, (trimRange.endTimeSec - trimRange.startTimeSec) / totalSec))
     : 1.0;
 
+  const tabs: { id: "video" | "audio" | "adaptive" | "subtitle" | "fusion"; label: string }[] = [
+    { id: "video", label: "Video" },
+    { id: "audio", label: "Audio" },
+    { id: "adaptive", label: "Video Only" },
+    { id: "subtitle", label: "Subtitles (SRT)" },
+    { id: "fusion", label: "Custom Fusion" }
+  ];
+
   return (
     <>
       {/* Range Trimmer Component */}
       <RangeSelector totalDurationSec={totalSec} onChange={handleRangeChange} />
 
       {/* Tabs Capsule */}
-      <div className="ytd-tabs">
-        <button
-          className={`ytd-tab-btn ${activeTab === "video" ? "active" : ""}`}
-          onClick={() => setActiveTab("video")}
-        >
-          Video
-        </button>
-        <button
-          className={`ytd-tab-btn ${activeTab === "audio" ? "active" : ""}`}
-          onClick={() => setActiveTab("audio")}
-        >
-          Audio
-        </button>
-        <button
-          className={`ytd-tab-btn ${activeTab === "adaptive" ? "active" : ""}`}
-          onClick={() => setActiveTab("adaptive")}
-        >
-          Video Only
-        </button>
-        <button
-          className={`ytd-tab-btn ${activeTab === "subtitle" ? "active" : ""}`}
-          onClick={() => setActiveTab("subtitle")}
-        >
-          Subtitles (SRT)
-        </button>
-        <button
-          className={`ytd-tab-btn ${activeTab === "fusion" ? "active" : ""}`}
-          onClick={() => setActiveTab("fusion")}
-        >
-          Custom Fusion
-        </button>
+      <div className="flex gap-1 bg-white/[0.02] p-1 rounded-2xl border border-white/5 mb-4 overflow-x-auto no-scrollbar font-sans">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`flex-1 py-1.5 px-2 text-[11px] font-semibold rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === t.id
+                ? "bg-white/10 text-purple-300 border border-white/5 shadow-sm"
+                : "text-zinc-400 border border-transparent hover:text-zinc-100"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Lists Area */}
-      <div className="ytd-stream-list">
+      <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1 mb-3 no-scrollbar font-sans">
         {activeTab === "fusion" && (
           <CustomFusionSelector
             videoInfo={videoInfo}
@@ -93,9 +84,9 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
         )}
 
         {activeTab === "subtitle" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div className="flex flex-col gap-2">
             {(!videoInfo.captionTracks || videoInfo.captionTracks.length === 0) ? (
-              <div style={{ padding: "20px", textAlign: "center", color: "#71717a", fontSize: "12px" }}>
+              <div className="p-5 text-center text-zinc-500 text-xs">
                 No caption tracks available for this video.
               </div>
             ) : (
@@ -111,25 +102,25 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
                 };
 
                 return (
-                  <div className="ytd-stream-row" key={track.baseUrl + idx}>
-                    <div className="ytd-stream-info">
-                      <span className="ytd-stream-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div key={track.baseUrl + idx} className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.015] hover:bg-white/[0.04] border border-white/5 hover:border-white/10 transition-all">
+                    <div className="flex flex-col gap-0.5 flex-1 min-w-0 pr-2">
+                      <span className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5 truncate">
                         💬 {track.name}
-                        <span style={{ fontSize: "10px", background: "rgba(168, 85, 247, 0.15)", color: "#c084fc", padding: "1px 6px", borderRadius: "4px", border: "1px solid rgba(168, 85, 247, 0.3)" }}>
+                        <span className="text-[10px] bg-purple-500/15 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/30">
                           [{track.code}]
                         </span>
                       </span>
-                      <span className="ytd-stream-meta">
+                      <span className="text-[10px] text-zinc-400 truncate">
                         Word-level SRT Format {trimRange.enabled ? "• Trimmed Window" : "• Subtitle Track"}
                       </span>
                     </div>
                     <button
-                      className="ytd-download-icon-btn"
                       disabled={isDownloading}
                       onClick={() => handleDownload(subtitleStream, "subtitle")}
+                      className="w-8 h-8 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/5 hover:border-white/15 text-zinc-200 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50 shrink-0"
                     >
                       {isDownloading ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-spin text-purple-400">
                           <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
                         </svg>
                       ) : (
@@ -153,22 +144,22 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
             const rawSize = parseInt(stream.contentLength || "0", 10);
             const displaySize = rawSize > 0 ? Math.round(rawSize * trimmedRatio) : 0;
             return (
-              <div className="ytd-stream-row" key={stream.itag}>
-                <div className="ytd-stream-info">
-                  <span className="ytd-stream-label">
+              <div key={stream.itag} className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.015] hover:bg-white/[0.04] border border-white/5 hover:border-white/10 transition-all">
+                <div className="flex flex-col gap-0.5 flex-1 min-w-0 pr-2">
+                  <span className="text-xs font-semibold text-zinc-100 truncate">
                     MP4 Progressive ({stream.qualityLabel || "Progressive"})
                   </span>
-                  <span className="ytd-stream-meta">
+                  <span className="text-[10px] text-zinc-400 truncate">
                     {formatBytes(displaySize || stream.contentLength)} • Video + Audio {trimRange.enabled ? "• Trimmed" : ""}
                   </span>
                 </div>
                 <button
-                  className="ytd-download-icon-btn"
                   disabled={isDownloading}
                   onClick={() => handleDownload(stream, "video")}
+                  className="w-8 h-8 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/5 hover:border-white/15 text-zinc-200 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50 shrink-0"
                 >
                   {isDownloading ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-spin text-purple-400">
                       <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
                     </svg>
                   ) : (
@@ -197,27 +188,27 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
               const rawSize = parseInt(stream.contentLength || "0", 10);
               const displaySize = rawSize > 0 ? Math.round(rawSize * trimmedRatio) : 0;
               return (
-                <div className="ytd-stream-row" key={`${stream.itag}_${stream.langCode || "def"}`}>
-                  <div className="ytd-stream-info">
-                    <span className="ytd-stream-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <div key={`${stream.itag}_${stream.langCode || "def"}`} className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.015] hover:bg-white/[0.04] border border-white/5 hover:border-white/10 transition-all">
+                  <div className="flex flex-col gap-0.5 flex-1 min-w-0 pr-2">
+                    <span className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5 truncate">
                       🎵 {ext.toUpperCase()} Audio ({kbps} kbps)
                       {stream.langCode && (
-                        <span style={{ fontSize: "10px", background: "rgba(59, 130, 246, 0.15)", color: "#60a5fa", padding: "1px 6px", borderRadius: "4px", border: "1px solid rgba(59, 130, 246, 0.3)" }}>
+                        <span className="text-[10px] bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/30">
                           [{stream.langCode}]
                         </span>
                       )}
                     </span>
-                    <span className="ytd-stream-meta">
+                    <span className="text-[10px] text-zinc-400 truncate">
                       {formatBytes(displaySize || stream.contentLength)} • {langTag} • {isOpus ? "Opus" : "AAC"} {trimRange.enabled ? "• Trimmed" : ""}
                     </span>
                   </div>
                   <button
-                    className="ytd-download-icon-btn"
                     disabled={isDownloading}
                     onClick={() => handleDownload(stream, "audio")}
+                    className="w-8 h-8 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/5 hover:border-white/15 text-zinc-200 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50 shrink-0"
                   >
                     {isDownloading ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-spin text-purple-400">
                         <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
                       </svg>
                     ) : (
@@ -247,22 +238,22 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
               const rawSize = parseInt(stream.contentLength || "0", 10);
               const displaySize = rawSize > 0 ? Math.round(rawSize * trimmedRatio) : 0;
               return (
-                <div className="ytd-stream-row" key={stream.itag}>
-                  <div className="ytd-stream-info">
-                    <span className="ytd-stream-label">
+                <div key={stream.itag} className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.015] hover:bg-white/[0.04] border border-white/5 hover:border-white/10 transition-all">
+                  <div className="flex flex-col gap-0.5 flex-1 min-w-0 pr-2">
+                    <span className="text-xs font-semibold text-zinc-100 truncate">
                       {isWebm ? "WEBM" : "MP4"} Video ({stream.qualityLabel})
                     </span>
-                    <span className="ytd-stream-meta">
+                    <span className="text-[10px] text-zinc-400 truncate">
                       {formatBytes(displaySize || stream.contentLength)} • Video Only {trimRange.enabled ? "• Trimmed" : ""}
                     </span>
                   </div>
                   <button
-                    className="ytd-download-icon-btn"
                     disabled={isDownloading}
                     onClick={() => handleDownload(stream, "adaptive")}
+                    className="w-8 h-8 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/5 hover:border-white/15 text-zinc-200 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50 shrink-0"
                   >
                     {isDownloading ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ animation: "spin 0.8s linear infinite" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-spin text-purple-400">
                         <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
                       </svg>
                     ) : (
@@ -279,4 +270,3 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
     </>
   );
 };
-

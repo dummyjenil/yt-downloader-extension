@@ -3,8 +3,8 @@ import React from "react";
 
 import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "./types/youtube";
 import { extractVideoId, formatBytes } from "./utils/youtube";
-import { themeStyles, themeColors } from "./styles/theme";
 import { getDirectoryHandle, storeDirectoryHandle, clearDirectoryHandle } from "./utils/storage";
+import "./styles/globals.css";
 
 // Components
 import { Header } from "./components/Header";
@@ -224,22 +224,12 @@ function IndexPopup() {
   const activeDownloads = downloads.filter(d => d.status === "downloading" || d.status === "paused");
 
   return (
-    <div style={themeStyles.container}>
+    <div className="w-[380px] min-h-[480px] max-h-[600px] bg-zinc-950 text-zinc-100 font-sans p-5 flex flex-col overflow-y-auto no-scrollbar box-border">
       {/* Header with App Logo and Status Badge */}
       <Header />
 
       {/* Sub Navigation Tabs */}
-      <div
-        style={{
-          display: "flex",
-          gap: "4px",
-          background: "rgba(255,255,255,0.02)",
-          padding: "3px",
-          borderRadius: "10px",
-          border: `1px solid ${themeColors.border}`,
-          marginBottom: "16px"
-        }}
-      >
+      <div className="flex gap-1 bg-white/[0.02] p-[3px] rounded-xl border border-white/10 mb-4">
         {[
           { id: "streams", label: "Extractor" },
           { id: "dashboard", label: `Downloads ${activeDownloads.length > 0 ? `(${activeDownloads.length})` : ""}` },
@@ -249,18 +239,11 @@ function IndexPopup() {
           <button
             key={tab.id}
             onClick={() => setNavTab(tab.id as any)}
-            style={{
-              flex: 1,
-              background: navTab === tab.id ? "rgba(255,255,255,0.05)" : "transparent",
-              border: navTab === tab.id ? `1px solid ${themeColors.border}` : "1px solid transparent",
-              borderRadius: "8px",
-              color: navTab === tab.id ? "#c084fc" : "#a1a1aa",
-              padding: "5px 0",
-              fontSize: "11px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
+            className={`flex-1 py-1 text.5 font-semibold rounded-lg text-[11px] transition-all cursor-pointer ${
+              navTab === tab.id
+                ? "bg-white/10 text-violet-300 border border-violet-500/30 shadow-sm"
+                : "text-zinc-400 border border-transparent hover:text-zinc-200"
+            }`}
           >
             {tab.label}
           </button>
@@ -278,19 +261,27 @@ function IndexPopup() {
           />
 
           {loading && (
-            <div style={themeStyles.loader}>
-              <style>{`
-                @keyframes spin {
-                  0% { transform: rotate(0deg); }
-                  100% { transform: rotate(360deg); }
-                }
-              `}</style>
-              <div style={themeStyles.spinner}></div>
-              <span style={{ fontSize: "11px", color: "#a1a1aa" }}>Extracting media streams...</span>
+            <div className="flex flex-col items-center justify-center py-10">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                className="animate-spin text-violet-400 mb-3"
+              >
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+              </svg>
+              <span className="text-[11px] text-zinc-400">Extracting media streams...</span>
             </div>
           )}
 
-          {error && <div style={themeStyles.errorText}>{error}</div>}
+          {error && (
+            <div className="text-xs text-rose-400 leading-relaxed p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl mt-2">
+              {error}
+            </div>
+          )}
 
           {videoInfo && <VideoDetails videoInfo={videoInfo} />}
 
@@ -306,7 +297,7 @@ function IndexPopup() {
                 />
               )}
 
-              <div style={themeStyles.streamList}>
+              <div className="flex flex-col gap-2">
                 {activeTab === "video" &&
                   videoInfo.formats.map((stream) => (
                     <StreamRow

@@ -54,62 +54,31 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({ totalDurationSec, 
   }, [enabled, startStr, endStr, totalDurationSec]);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "10px",
-        background: "rgba(255, 255, 255, 0.025)",
-        border: "1px solid rgba(255, 255, 255, 0.08)",
-        borderRadius: "14px",
-        padding: "12px 14px",
-        marginBottom: "12px"
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: "11px", fontWeight: 600, color: "#e4e4e7", letterSpacing: "0.4px" }}>
+    <div className="flex flex-col gap-2.5 bg-white/[0.025] border border-white/10 rounded-2xl p-3 mb-3">
+      <div className="flex justify-between items-center">
+        <span className="text-xs font-semibold text-zinc-200 tracking-wide">
           Media Range Mode:
         </span>
-        <div
-          style={{
-            display: "inline-flex",
-            background: "#18181b",
-            borderRadius: "8px",
-            padding: "2px",
-            border: "1px solid rgba(255, 255, 255, 0.1)"
-          }}
-        >
+        <div className="inline-flex bg-zinc-900 p-0.5 rounded-lg border border-white/10">
           <button
             type="button"
             onClick={() => setEnabled(false)}
-            style={{
-              background: !enabled ? "linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)" : "transparent",
-              color: !enabled ? "#ffffff" : "#a1a1aa",
-              border: "none",
-              borderRadius: "6px",
-              padding: "4px 10px",
-              fontSize: "11px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
+            className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all ${
+              !enabled
+                ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
           >
             Full Media
           </button>
           <button
             type="button"
             onClick={() => setEnabled(true)}
-            style={{
-              background: enabled ? "linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)" : "transparent",
-              color: enabled ? "#ffffff" : "#a1a1aa",
-              border: "none",
-              borderRadius: "6px",
-              padding: "4px 10px",
-              fontSize: "11px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
+            className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all ${
+              enabled
+                ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
           >
             Trimmed Media
           </button>
@@ -117,60 +86,31 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({ totalDurationSec, 
       </div>
 
       {enabled && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            marginTop: "2px",
-            paddingTop: "8px",
-            borderTop: "1px dashed rgba(255, 255, 255, 0.08)"
-          }}
-        >
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
-              <span style={{ fontSize: "10px", color: "#a1a1aa", fontWeight: 500 }}>Start Time (mm:ss)</span>
+        <div className="flex flex-col gap-2 pt-2 border-t border-dashed border-white/10">
+          <div className="flex gap-2.5 items-center">
+            <div className="flex-1 flex flex-col gap-1">
+              <span className="text-[10px] text-zinc-400 font-medium">Start Time (mm:ss)</span>
               <input
                 type="text"
                 value={startStr}
                 onChange={(e) => setStartStr(e.target.value)}
                 placeholder="00:00"
-                style={{
-                  background: "#09090b",
-                  border: "1px solid rgba(255, 255, 255, 0.15)",
-                  borderRadius: "8px",
-                  color: "#f4f4f5",
-                  padding: "6px 8px",
-                  fontSize: "12px",
-                  fontFamily: "monospace",
-                  outline: "none",
-                  textAlign: "center"
-                }}
+                className="bg-zinc-950 border border-white/15 rounded-lg text-zinc-100 px-2 py-1 text-xs font-mono text-center outline-none focus:border-violet-500/50"
               />
             </div>
-            <span style={{ fontSize: "14px", color: "#71717a", marginTop: "16px" }}>→</span>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
-              <span style={{ fontSize: "10px", color: "#a1a1aa", fontWeight: 500 }}>End Time (mm:ss)</span>
+            <span className="text-sm text-zinc-500 mt-4">→</span>
+            <div className="flex-1 flex flex-col gap-1">
+              <span className="text-[10px] text-zinc-400 font-medium">End Time (mm:ss)</span>
               <input
                 type="text"
                 value={endStr}
                 onChange={(e) => setEndStr(e.target.value)}
                 placeholder="01:30"
-                style={{
-                  background: "#09090b",
-                  border: "1px solid rgba(255, 255, 255, 0.15)",
-                  borderRadius: "8px",
-                  color: "#f4f4f5",
-                  padding: "6px 8px",
-                  fontSize: "12px",
-                  fontFamily: "monospace",
-                  outline: "none",
-                  textAlign: "center"
-                }}
+                className="bg-zinc-950 border border-white/15 rounded-lg text-zinc-100 px-2 py-1 text-xs font-mono text-center outline-none focus:border-violet-500/50"
               />
             </div>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#c084fc" }}>
+          <div className="flex justify-between text-[10px] text-purple-300 font-medium">
             <span>✂️ Trim Active</span>
             <span>Duration: {formatSecToTime(trimmedDuration)}</span>
           </div>
