@@ -1,5 +1,3 @@
-import * as fs from "fs";
-import * as path from "path";
 
 // Configuration
 const VIDEO_ID = process.argv[2] || "wk62YFS3gqc";
@@ -34,8 +32,8 @@ async function fetchPlayerResponseFromWebpage(videoId: string): Promise<any> {
 
   const html = await response.text();
   const match = html.match(/var ytInitialPlayerResponse\s*=\s*({.+?});<\/script>/) ||
-                html.match(/ytInitialPlayerResponse\s*=\s*({.+?});var /) ||
-                html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+    html.match(/ytInitialPlayerResponse\s*=\s*({.+?});var /) ||
+    html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
 
   if (match && match[1]) {
     return JSON.parse(match[1]);
@@ -109,57 +107,7 @@ function parseAllAudioStreams(playerResponse: any): AudioStream[] {
   return audioStreams;
 }
 
-// 3. Fast Parallel Chunk Downloader
-async function downloadAudioParallel(url: string, totalBytes: number, label: string): Promise<Buffer> {
-  console.log(`\nDownloading [${label}] total size: ${(totalBytes / 1024 / 1024).toFixed(2)} MB via parallel fetch...`);
-  
-  const chunks: { index: number; start: number; end: number }[] = [];
-  let curr = 0;
-  let idx = 0;
-  while (curr < totalBytes) {
-    const end = Math.min(curr + CHUNK_SIZE - 1, totalBytes - 1);
-    chunks.push({ index: idx++, start: curr, end });
-    curr = end + 1;
-  }
-
-  const downloaded = new Map<number, Buffer>();
-  let downloadedBytes = 0;
-  const startTime = Date.now();
-
-  const queue = [...chunks];
-  const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-    while (queue.length > 0) {
-      const chunk = queue.shift();
-      if (!chunk) break;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-          "Range": `bytes=${chunk.start}-${chunk.end}`
-        }
-      });
-      if (!res.ok && res.status !== 206) throw new Error(`Fetch failed chunk ${chunk.start}-${chunk.end}`);
-      const buf = Buffer.from(await res.arrayBuffer());
-      downloaded.set(chunk.index, buf);
-      downloadedBytes += buf.length;
-
-      const elapsedSec = (Date.now() - startTime) / 1000 || 0.001;
-      const speedMbps = ((downloadedBytes * 8) / (1024 * 1024 * elapsedSec)).toFixed(2);
-      const percent = ((downloadedBytes / totalBytes) * 100).toFixed(1);
-      process.stdout.write(`\rProgress: ${percent}% (${(downloadedBytes / 1024 / 1024).toFixed(2)} MB / ${(totalBytes / 1024 / 1024).toFixed(2)} MB) | Speed: ${speedMbps} Mbps`);
-    }
-  });
-
-  await Promise.all(workers);
-  console.log(`\nCompleted in ${((Date.now() - startTime) / 1000).toFixed(2)}s!`);
-
-  const buffers: Buffer[] = [];
-  for (let i = 0; i < chunks.length; i++) {
-    buffers.push(downloaded.get(i)!);
-  }
-  return Buffer.concat(buffers);
-}
-
-// 4. Main Function
+// 3. Main Function
 async function main() {
   console.log("=========================================================================");
   console.log(" YouTube Multi-Language Audio Downloader (Short TypeScript)");

@@ -147,19 +147,8 @@ function IndexPopup() {
       audioExt = customAudioStream.mimeType.includes("webm") ? "webm" : "m4a";
       ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
     } else if (category === "adaptive") {
-      const isWebm = stream.mimeType.includes("webm");
-      const matchingAudios = videoInfo.adaptiveFormats.filter(
-        (f) => f.mimeType.startsWith("audio/") && f.mimeType.includes(isWebm ? "webm" : "mp4")
-      );
-      const bestAudio = matchingAudios.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0]
-        || videoInfo.adaptiveFormats.filter((f) => f.mimeType.startsWith("audio/"))[0];
-
-      if (bestAudio) {
-        audioUrl = bestAudio.url;
-        audioSize = parseInt(bestAudio.contentLength || "0", 10);
-        audioExt = bestAudio.mimeType.includes("webm") ? "webm" : "m4a";
-      }
-      ext = isWebm ? "webm" : "mp4";
+      // Direct pure video track download from YouTube server without auto audio fusion
+      ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
     } else if (stream.mimeType.includes("webm")) {
       ext = "webm";
     }
