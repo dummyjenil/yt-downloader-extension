@@ -142,18 +142,29 @@ export default function SandboxPage() {
         } else {
           // Stream copy video without re-encoding whole 1080p stream
           ffmpegArgs.push("-c:v", "copy");
-          if (ext === "mp4" && isTrimming) {
-            ffmpegArgs.push("-bsf:v", "h264_mp4toannexb");
-          }
 
-          if (audioData || isTrimming) {
-            let audioCodec = "aac";
-            if (ext === "webm") {
-              audioCodec = "libopus";
+          if (audioData) {
+            const isMp4Output = ext === "mp4";
+            const isWebmOutput = ext === "webm";
+            const isAudioM4a = finalAudioExt === "m4a" || finalAudioExt === "mp4";
+            const isAudioWebm = finalAudioExt === "webm";
+
+            if (isMp4Output && isAudioWebm) {
+              // WebM/Opus audio converted to AAC for MP4 container compatibility
+              ffmpegArgs.push("-c:a", "aac");
+            } else if (isWebmOutput && isAudioM4a) {
+              // M4A/AAC audio converted to Opus for WebM container compatibility
+              ffmpegArgs.push("-c:a", "libopus");
+            } else {
+              // Stream copy compatible audio formats (MP4+m4a, WebM+webm, MKV) instantly
+              ffmpegArgs.push("-c:a", "copy");
             }
-            ffmpegArgs.push("-c:a", audioCodec);
           } else {
             ffmpegArgs.push("-c:a", "copy");
+          }
+
+          if (ext === "mp4") {
+            ffmpegArgs.push("-movflags", "+faststart");
           }
         }
 

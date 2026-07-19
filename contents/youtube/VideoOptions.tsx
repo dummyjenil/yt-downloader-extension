@@ -55,7 +55,7 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
       <StreamTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Lists Area using shared StreamRow components */}
-      <div className="flex flex-col gap-3 max-h-[260px] sm:max-h-[320px] overflow-y-auto pr-1 mb-4 no-scrollbar font-sans">
+      <div className="flex flex-col gap-3 min-h-[280px] max-h-[440px] sm:max-h-[500px] overflow-y-auto pr-1.5 pb-2 mb-4 font-sans no-scrollbar">
         {activeTab === "fusion" && (
           <CustomFusionSelector
             videoInfo={videoInfo}
@@ -86,7 +86,7 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
                 return (
                   <StreamRow
                     key={track.baseUrl + idx}
-                    label={`💬 ${track.name} [${track.code}]`}
+                    label={`${track.name} [${track.code}]`}
                     meta={`Word-level SRT Format ${trimRange.enabled ? "• Trimmed Window" : "• Subtitle Track"}`}
                     isDownloading={isDownloading}
                     onDownload={() => handleDownload(subtitleStream, "subtitle")}
@@ -133,7 +133,7 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
               return (
                 <StreamRow
                   key={`${stream.itag}_${stream.langCode || "def"}`}
-                  label={`🎵 ${ext.toUpperCase()} Audio (${kbps} kbps)${stream.langCode ? ` [${stream.langCode}]` : ""}`}
+                  label={`${ext.toUpperCase()} Audio (${kbps} kbps)${stream.langCode ? ` [${stream.langCode}]` : ""}`}
                   meta={`${formatBytes(displaySize || stream.contentLength)} • ${langTag} • ${isOpus ? "Opus" : "AAC"} ${trimRange.enabled ? "• Trimmed" : ""}`}
                   isDownloading={isDownloading}
                   onDownload={() => handleDownload(stream, "audio")}

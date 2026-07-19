@@ -50,30 +50,35 @@ export async function setupAndStartJob(
     }
 
     const writableStream = await setupDestinationStream(job, setDirPermission);
-    let totalSize = job.totalSize;
-
-    if (!totalSize) {
-      const headResponse = await fetch(`${job.url}&ext_download=true`, { method: "HEAD" }).catch(() => null);
+    const fetchStreamSize = async (streamUrl: string): Promise<number> => {
+      const headResponse = await fetch(`${streamUrl}&ext_download=true`, { method: "HEAD" }).catch(() => null);
       const headSize = headResponse?.headers.get("content-length");
-      if (headSize) {
-        totalSize = parseInt(headSize, 10);
-      } else {
-        const rangeResponse = await fetch(`${job.url}&range=0-0&ext_download=true`);
-        const rangeHeader = rangeResponse.headers.get("content-range");
-        if (rangeHeader) {
-          totalSize = parseInt(rangeHeader.split("/")[1], 10);
-        }
+      if (headSize) return parseInt(headSize, 10);
+
+      const rangeResponse = await fetch(`${streamUrl}&range=0-0&ext_download=true`).catch(() => null);
+      const rangeHeader = rangeResponse?.headers.get("content-range");
+      if (rangeHeader) {
+        return parseInt(rangeHeader.split("/")[1], 10);
       }
+      return 0;
+    };
+
+    if (job.audioUrl && (!job.audioSize || job.audioSize === 0)) {
+      job.audioSize = await fetchStreamSize(job.audioUrl);
     }
 
-    if (!totalSize) {
-      throw new Error("Unable to fetch video size from YouTube server.");
+    let videoSize = job.audioUrl && job.audioSize ? Math.max(0, job.totalSize - job.audioSize) : job.totalSize;
+    if (!videoSize) {
+      videoSize = await fetchStreamSize(job.url);
     }
 
-    job.totalSize = totalSize;
+    if (!videoSize && !job.audioSize) {
+      throw new Error("Unable to fetch media stream size from YouTube server.");
+    }
+
+    const finalTotalSize = videoSize + (job.audioSize || 0);
+    job.totalSize = finalTotalSize;
     job.writableStream = writableStream;
-
-    const finalTotalSize = totalSize + (job.audioSize || 0);
 
     chrome.runtime.sendMessage({
       type: "TAB_DOWNLOAD_START",

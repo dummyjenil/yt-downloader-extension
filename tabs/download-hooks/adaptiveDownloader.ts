@@ -41,6 +41,7 @@ export async function processAdaptiveDownload(
         const vRangeSize = vSidx.rangeEnd - vSidx.rangeStart + 1;
         const aRangeSize = aSidx.rangeEnd - aSidx.rangeStart + 1;
         const sidxTotalPayload = vRangeSize + aRangeSize;
+        job.totalSize = sidxTotalPayload;
 
         let sidxDownloaded = 0;
         const updateSidxProgress = (addedBytes: number) => {
@@ -147,9 +148,13 @@ export async function processAdaptiveDownload(
   }
 
   // 2. Standard full stream adaptive fetching for video + audio
-  const videoSize = job.totalSize;
   const audioSize = job.audioSize || 0;
+  let videoSize = job.totalSize;
+  if (audioSize > 0 && job.totalSize > audioSize) {
+    videoSize = job.totalSize - audioSize;
+  }
   const totalSize = videoSize + audioSize;
+  job.totalSize = totalSize;
 
   const totalVideoChunks = Math.ceil(videoSize / currentChunkSize);
   const totalAudioChunks = Math.ceil(audioSize / currentChunkSize);

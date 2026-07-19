@@ -203,7 +203,7 @@ export function useDownloadManager() {
       url,
       title: cleanTitle,
       ext,
-      totalSize: totalSize || 0,
+      totalSize: (totalSize || 0) + (audioUrl ? (audioSize || 0) : 0),
       downloadedBytes: 0,
       percent: 0,
       speed: 0,

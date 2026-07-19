@@ -2,11 +2,23 @@ import { describe, expect, it } from "vitest";
 import { getThemeConfig, themes, type ThemeId } from "./themeConfig";
 
 describe("Theme Configuration Unit Tests", () => {
-  it("should contain definitions for glassmorphism, neobrutalism, material, and default themes", () => {
+  it("should contain definitions for all available themes", () => {
     expect(themes.glassmorphism).toBeDefined();
     expect(themes.neobrutalism).toBeDefined();
     expect(themes.material).toBeDefined();
     expect(themes.default).toBeDefined();
+    expect(themes.cyberpunk).toBeDefined();
+    expect(themes.nordic).toBeDefined();
+    expect(themes.emerald).toBeDefined();
+    expect(themes.sunset).toBeDefined();
+    expect(themes.dracula).toBeDefined();
+    expect(themes.retro).toBeDefined();
+    expect(themes.terminal).toBeDefined();
+    expect(themes.synthwave).toBeDefined();
+    expect(themes.claymorphism).toBeDefined();
+    expect(themes.parchment).toBeDefined();
+    expect(themes.oled).toBeDefined();
+    expect(themes.win95).toBeDefined();
   });
 
   it("should retrieve proper theme by ID using getThemeConfig", () => {
@@ -18,6 +30,19 @@ describe("Theme Configuration Unit Tests", () => {
     const mat = getThemeConfig("material");
     expect(mat.id).toBe("material");
     expect(mat.name).toBe("Material Theme");
+
+    const cyberpunk = getThemeConfig("cyberpunk");
+    expect(cyberpunk.id).toBe("cyberpunk");
+    expect(cyberpunk.name).toBe("Cyberpunk Neon");
+
+    const terminal = getThemeConfig("terminal");
+    expect(terminal.id).toBe("terminal");
+    expect(terminal.name).toBe("Hacker Terminal CLI");
+    expect(terminal.container).toContain("font-mono");
+
+    const win95 = getThemeConfig("win95");
+    expect(win95.id).toBe("win95");
+    expect(win95.name).toBe("Classic Retro Windows 95");
   });
 
   it("should fallback gracefully to glassmorphism if theme ID is invalid or undefined", () => {
@@ -29,7 +54,24 @@ describe("Theme Configuration Unit Tests", () => {
   });
 
   it("should ensure all theme configurations have mandatory style fields", () => {
-    const themeKeys: ThemeId[] = ["glassmorphism", "neobrutalism", "material", "default"];
+    const themeKeys: ThemeId[] = [
+      "glassmorphism",
+      "neobrutalism",
+      "material",
+      "default",
+      "cyberpunk",
+      "nordic",
+      "emerald",
+      "sunset",
+      "dracula",
+      "retro",
+      "terminal",
+      "synthwave",
+      "claymorphism",
+      "parchment",
+      "oled",
+      "win95"
+    ];
     themeKeys.forEach((key) => {
       const theme = themes[key];
       expect(theme.container).toBeTruthy();
