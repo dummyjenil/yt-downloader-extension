@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { clearDirectoryHandle, getDirectoryHandle, storeDirectoryHandle } from "../utils/storage";
 
+export type SaveMode = "directory" | "browser";
+
 export function useSettings() {
   const [chunkSize, setChunkSizeState] = useState<number>(5 * 1024 * 1024);
   const [concurrency, setConcurrencyState] = useState<number>(3);
+  const [saveMode, setSaveModeState] = useState<SaveMode>("directory");
   const [defaultDirName, setDefaultDirName] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["chunkSize", "concurrency"], (res) => {
+      chrome.storage.local.get(["chunkSize", "concurrency", "saveMode"], (res) => {
         if (res.chunkSize) setChunkSizeState(res.chunkSize as number);
         if (res.concurrency) setConcurrencyState(res.concurrency as number);
+        if (res.saveMode) setSaveModeState(res.saveMode as SaveMode);
       });
     }
 
@@ -35,6 +39,13 @@ export function useSettings() {
     }
   };
 
+  const setSaveMode = (val: SaveMode) => {
+    setSaveModeState(val);
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ saveMode: val });
+    }
+  };
+
   const handleSelectDirectory = async () => {
     try {
       if (!(window as any).showDirectoryPicker) {
@@ -44,6 +55,7 @@ export function useSettings() {
       const handle = await (window as any).showDirectoryPicker({ mode: "readwrite" });
       await storeDirectoryHandle(handle);
       setDefaultDirName(handle.name);
+      setSaveMode("directory");
     } catch (err: any) {
       console.error(err);
       alert("Failed to select directory: " + err.message);
@@ -60,6 +72,8 @@ export function useSettings() {
     setChunkSize,
     concurrency,
     setConcurrency,
+    saveMode,
+    setSaveMode,
     defaultDirName,
     handleSelectDirectory,
     handleClearDirectory

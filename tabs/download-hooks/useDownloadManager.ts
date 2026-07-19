@@ -12,6 +12,7 @@ export function useDownloadManager() {
   const [chunkSize, setChunkSize] = useState<number>(5 * 1024 * 1024);
   const [concurrency, setConcurrency] = useState<number>(3);
   const [maxConcurrentJobs, setMaxConcurrentJobs] = useState<number>(3);
+  const [saveMode, setSaveMode] = useState<SaveMode>("directory");
   const [defaultDirName, setDefaultDirName] = useState<string | null>(null);
   const [dirPermission, setDirPermission] = useState<string | null>(null);
   const [historyList, setHistoryList] = useState<any[]>([]);
@@ -20,17 +21,20 @@ export function useDownloadManager() {
   const chunkSizeRef = useRef(chunkSize);
   const concurrencyRef = useRef(concurrency);
   const maxConcurrentJobsRef = useRef(maxConcurrentJobs);
+  const saveModeRef = useRef(saveMode);
 
   useEffect(() => { chunkSizeRef.current = chunkSize; }, [chunkSize]);
   useEffect(() => { concurrencyRef.current = concurrency; }, [concurrency]);
   useEffect(() => { maxConcurrentJobsRef.current = maxConcurrentJobs; }, [maxConcurrentJobs]);
+  useEffect(() => { saveModeRef.current = saveMode; }, [saveMode]);
 
   // Load Settings and History on mount
   useEffect(() => {
-    chrome.storage.local.get(["chunkSize", "concurrency", "maxConcurrentJobs", "downloadHistory"], (res) => {
+    chrome.storage.local.get(["chunkSize", "concurrency", "maxConcurrentJobs", "saveMode", "downloadHistory"], (res) => {
       if (res.chunkSize) setChunkSize(res.chunkSize as number);
       if (res.concurrency) setConcurrency(res.concurrency as number);
       if (res.maxConcurrentJobs) setMaxConcurrentJobs(res.maxConcurrentJobs as number);
+      if (res.saveMode) setSaveMode(res.saveMode as SaveMode);
       if (res.downloadHistory) setHistoryList(res.downloadHistory as any[]);
     });
 
@@ -86,60 +90,86 @@ export function useDownloadManager() {
     return () => chrome.runtime.onMessage.removeListener(messageListener);
   }, []);
 
-  // Handle URL parameters on initial tab load
+  // Handle pending download job from storage or URL parameters on initial tab load
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const url = urlParams.get("url") || "";
-    const title = urlParams.get("title") || "video";
-    const ext = urlParams.get("ext") || "mp4";
-    const contentLengthStr = urlParams.get("contentLength") || "0";
-    const totalSize = parseInt(contentLengthStr, 10);
-    const audioUrl = urlParams.get("audioUrl") || undefined;
-    const audioSizeStr = urlParams.get("audioSize") || "";
-    const audioSize = audioSizeStr ? parseInt(audioSizeStr, 10) : undefined;
-    const audioExt = urlParams.get("audioExt") || undefined;
-    const trimStart = urlParams.get("trimStart");
-    const trimEnd = urlParams.get("trimEnd");
-    const trimRange = (trimStart && trimEnd) ? { enabled: true, startTimeSec: parseFloat(trimStart), endTimeSec: parseFloat(trimEnd) } : undefined;
-    const subtitlesStr = urlParams.get("subtitles");
-    let selectedSubtitles: CaptionTrack[] | undefined = undefined;
-    if (subtitlesStr) {
-      try {
-        selectedSubtitles = JSON.parse(subtitlesStr);
-      } catch (e) {
-        console.warn("Failed to parse subtitles query parameter:", e);
+    chrome.storage.local.get(["pendingDownloadJob"], (res) => {
+      if (res.pendingDownloadJob) {
+        const p = res.pendingDownloadJob;
+        chrome.storage.local.remove(["pendingDownloadJob"]);
+        setTimeout(() => {
+          addNewJob(
+            p.url,
+            p.title,
+            p.ext,
+            p.contentLength ? parseInt(p.contentLength, 10) : 0,
+            p.audioUrl,
+            p.audioSize ? parseInt(p.audioSize, 10) : undefined,
+            p.audioExt,
+            p.initRange,
+            p.indexRange,
+            p.audioInitRange,
+            p.audioIndexRange,
+            p.trimRange,
+            p.selectedSubtitles
+          );
+        }, 300);
+        return;
       }
-    }
 
-    const initRangeStr = urlParams.get("initRange");
-    const indexRangeStr = urlParams.get("indexRange");
-    const audioInitRangeStr = urlParams.get("audioInitRange");
-    const audioIndexRangeStr = urlParams.get("audioIndexRange");
+      // Fallback for direct URL parameter navigation
+      const urlParams = new URLSearchParams(window.location.search);
+      const url = urlParams.get("url") || "";
+      const title = urlParams.get("title") || "video";
+      const ext = urlParams.get("ext") || "mp4";
+      const contentLengthStr = urlParams.get("contentLength") || "0";
+      const totalSize = parseInt(contentLengthStr, 10);
+      const audioUrl = urlParams.get("audioUrl") || undefined;
+      const audioSizeStr = urlParams.get("audioSize") || "";
+      const audioSize = audioSizeStr ? parseInt(audioSizeStr, 10) : undefined;
+      const audioExt = urlParams.get("audioExt") || undefined;
+      const trimStart = urlParams.get("trimStart");
+      const trimEnd = urlParams.get("trimEnd");
+      const trimRange = (trimStart && trimEnd) ? { enabled: true, startTimeSec: parseFloat(trimStart), endTimeSec: parseFloat(trimEnd) } : undefined;
+      const subtitlesStr = urlParams.get("subtitles");
+      let selectedSubtitles: CaptionTrack[] | undefined = undefined;
+      if (subtitlesStr) {
+        try {
+          selectedSubtitles = JSON.parse(subtitlesStr);
+        } catch (e) {
+          console.warn("Failed to parse subtitles query parameter:", e);
+        }
+      }
 
-    const initRange = initRangeStr ? JSON.parse(initRangeStr) : undefined;
-    const indexRange = indexRangeStr ? JSON.parse(indexRangeStr) : undefined;
-    const audioInitRange = audioInitRangeStr ? JSON.parse(audioInitRangeStr) : undefined;
-    const audioIndexRange = audioIndexRangeStr ? JSON.parse(audioIndexRangeStr) : undefined;
+      const initRangeStr = urlParams.get("initRange");
+      const indexRangeStr = urlParams.get("indexRange");
+      const audioInitRangeStr = urlParams.get("audioInitRange");
+      const audioIndexRangeStr = urlParams.get("audioIndexRange");
 
-    if (url) {
-      setTimeout(() => {
-        addNewJob(
-          url,
-          title,
-          ext,
-          totalSize,
-          audioUrl,
-          audioSize,
-          audioExt,
-          initRange,
-          indexRange,
-          audioInitRange,
-          audioIndexRange,
-          trimRange,
-          selectedSubtitles
-        );
-      }, 300);
-    }
+      const initRange = initRangeStr ? JSON.parse(initRangeStr) : undefined;
+      const indexRange = indexRangeStr ? JSON.parse(indexRangeStr) : undefined;
+      const audioInitRange = audioInitRangeStr ? JSON.parse(audioInitRangeStr) : undefined;
+      const audioIndexRange = audioIndexRangeStr ? JSON.parse(audioIndexRangeStr) : undefined;
+
+      if (url) {
+        setTimeout(() => {
+          addNewJob(
+            url,
+            title,
+            ext,
+            totalSize,
+            audioUrl,
+            audioSize,
+            audioExt,
+            initRange,
+            indexRange,
+            audioInitRange,
+            audioIndexRange,
+            trimRange,
+            selectedSubtitles
+          );
+        }, 300);
+      }
+    });
   }, []);
 
   const requestDirPermission = async () => {
@@ -260,7 +290,8 @@ export function useDownloadManager() {
       chunkSizeRef,
       concurrencyRef,
       refreshHistory,
-      processQueue
+      processQueue,
+      saveModeRef
     );
   };
 
@@ -318,13 +349,15 @@ export function useDownloadManager() {
     });
   };
 
-  const updateSetting = (key: "chunkSize" | "concurrency" | "maxConcurrentJobs", val: number) => {
+  const updateSetting = (key: "chunkSize" | "concurrency" | "maxConcurrentJobs" | "saveMode", val: any) => {
     if (key === "chunkSize") {
       setChunkSize(val);
     } else if (key === "concurrency") {
       setConcurrency(val);
     } else if (key === "maxConcurrentJobs") {
       setMaxConcurrentJobs(val);
+    } else if (key === "saveMode") {
+      setSaveMode(val);
     }
     chrome.storage.local.set({ [key]: val });
   };
@@ -340,6 +373,7 @@ export function useDownloadManager() {
     chunkSize,
     concurrency,
     maxConcurrentJobs,
+    saveMode,
     defaultDirName,
     dirPermission,
     historyList,

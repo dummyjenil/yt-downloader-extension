@@ -1,87 +1,167 @@
-import { setDNRHeadersForClient } from "./background/dnr";
-import { fetchVideoInfo } from "./background/youtube-video";
-import { downloadFFmpeg, isFFmpegInstalled } from "./utils/ffmpeg-helper";
+import type { VideoInfo } from "./types/youtube";
 
-// Set default rules to ANDROID_VR when background loads
-chrome.runtime.onInstalled.addListener(() => {
-  setDNRHeadersForClient("ANDROID_VR").catch(console.error);
-
-  // Auto start download of FFmpeg on install
-  isFFmpegInstalled("0.12.10").then((installed) => {
-    if (!installed) {
-      chrome.storage.local.set({
-        ffmpeg_status: "downloading",
-        ffmpeg_progress: 0,
-        ffmpeg_error: ""
-      });
-
-      downloadFFmpeg("0.12.10", (progress) => {
-        chrome.storage.local.set({ ffmpeg_progress: progress });
-      })
-        .then(() => {
-          chrome.storage.local.set({ ffmpeg_status: "installed", ffmpeg_progress: 100 });
-        })
-        .catch((err) => {
-          console.error("FFmpeg auto-download failed:", err);
-          chrome.storage.local.set({
-            ffmpeg_status: "error",
-            ffmpeg_error: err.message || "Failed to download FFmpeg automatically."
-          });
-        });
-    } else {
-      chrome.storage.local.set({ ffmpeg_status: "installed", ffmpeg_progress: 100 });
-    }
-  });
-});
-
-chrome.runtime.onStartup.addListener(() => {
-  setDNRHeadersForClient("ANDROID_VR").catch(console.error);
-});
-
-interface ActiveDownload {
-  id: string;
-  url: string;
-  title: string;
-  ext: string;
-  downloaded: number;
-  total: number;
-  percent: number;
-  speed: number;
-  eta: number;
-  status: "idle" | "downloading" | "paused" | "complete" | "error";
-  errorMessage?: string;
-  timestamp: number;
-}
-
-const activeDownloads = new Map<string, ActiveDownload>();
-
-// Broadcast message to popup and all tabs (YouTube content script overlays)
-function broadcastToAll(message: any) {
-  chrome.runtime.sendMessage(message).catch(() => { });
-  chrome.tabs.query({}, (tabs) => {
-    for (const tab of tabs) {
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, message).catch(() => { });
+// Explicitly register web request rule to strip 'referer' header for YouTube streaming requests
+function setupDeclarativeNetRules() {
+  const RULE_ID = 1;
+  chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: [RULE_ID],
+    addRules: [
+      {
+        id: RULE_ID,
+        priority: 1,
+        action: {
+          type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+          requestHeaders: [
+            {
+              header: "referer",
+              operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE
+            }
+          ]
+        },
+        condition: {
+          urlFilter: "googlevideo.com",
+          resourceTypes: [
+            chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
+            chrome.declarativeNetRequest.ResourceType.MEDIA,
+            chrome.declarativeNetRequest.ResourceType.OTHER
+          ]
+        }
       }
+    ]
+  });
+}
+
+// Register rules on install & runtime startup
+chrome.runtime.onInstalled.addListener(() => {
+  setupDeclarativeNetRules();
+});
+setupDeclarativeNetRules();
+
+async function fetchVideoInfo(videoId: string): Promise<VideoInfo> {
+  const apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+  const playerUrl = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false&ext_request=true`;
+
+  let visitorData = "";
+  try {
+    const webRes = await fetch(playerUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      },
+      body: JSON.stringify({
+        videoId,
+        context: {
+          client: {
+            clientName: "WEB",
+            clientVersion: "2.20251021.01.00",
+            osName: "Windows",
+            osVersion: "10.0",
+            platform: "DESKTOP"
+          }
+        }
+      })
+    });
+
+    if (webRes.ok) {
+      const webData = await webRes.json();
+      visitorData = webData?.responseContext?.visitorData || "";
     }
+  } catch (err) {
+    console.warn("Failed to fetch Web visitorData:", err);
+  }
+
+  const vrRes = await fetch(playerUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+    },
+    body: JSON.stringify({
+      videoId,
+      contentCheckOk: true,
+      context: {
+        client: {
+          clientName: "ANDROID_VR",
+          clientVersion: "1.60.19",
+          deviceMake: "Oculus",
+          deviceModel: "Quest 3",
+          osName: "Android",
+          osVersion: "12L",
+          androidSdkVersion: "32",
+          visitorData
+        }
+      }
+    })
+  });
+
+  if (!vrRes.ok) {
+    throw new Error(`YouTube VR Player API HTTP ${vrRes.status}`);
+  }
+
+  const data = await vrRes.json();
+  const videoDetails = data?.videoDetails || {};
+  const streamingData = data?.streamingData || {};
+  const captionTracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+
+  return {
+    title: videoDetails.title || "YouTube Video",
+    duration: videoDetails.lengthSeconds || "0",
+    lengthSeconds: videoDetails.lengthSeconds || "0",
+    formats: streamingData.formats || [],
+    adaptiveFormats: streamingData.adaptiveFormats || [],
+    captionTracks: captionTracks.map((t: any) => ({
+      baseUrl: t.baseUrl,
+      name: t.name?.simpleText || t.name?.runs?.[0]?.text || "Unknown",
+      code: t.languageCode || "en"
+    }))
+  };
+}
+
+// In-memory active downloads state rehydrated from storage for MV3 lifecycle
+const activeDownloads = new Map<string, any>();
+
+// Rehydrate active downloads state when service worker starts
+chrome.storage.local.get({ activeDownloadsState: [] }, (res) => {
+  if (Array.isArray(res.activeDownloadsState)) {
+    res.activeDownloadsState.forEach((item: any) => {
+      if (item && item.id) {
+        activeDownloads.set(item.id, item);
+      }
+    });
+  }
+});
+
+function syncActiveDownloadsToStorage() {
+  const downloads = Array.from(activeDownloads.values());
+  chrome.storage.local.set({ activeDownloadsState: downloads });
+}
+
+function broadcastToAll(message: any) {
+  syncActiveDownloadsToStorage();
+  chrome.runtime.sendMessage(message).catch(() => {});
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach((tab) => {
+      if (tab.id !== undefined) {
+        chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+      }
+    });
   });
 }
 
-function saveToHistory(item: any) {
-  chrome.storage.local.get(["downloadHistory"], (result) => {
-    const history = (result.downloadHistory as any[]) || [];
-    // Keep max 50 items
-    const updatedHistory = [item, ...history].slice(0, 50);
-    chrome.storage.local.set({ downloadHistory: updatedHistory });
+function saveToHistory(entry: any) {
+  chrome.storage.local.get({ downloadHistory: [] }, (result) => {
+    const history = result.downloadHistory || [];
+    const updated = [entry, ...history.filter((h: any) => h.id !== entry.id)].slice(0, 100);
+    chrome.storage.local.set({ downloadHistory: updated });
   });
 }
 
-// Listener for popup and tab messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "OPEN_DOWNLOAD_TAB") {
     chrome.tabs.create({ url: message.url });
     sendResponse({ success: true });
-    return true;
+    return false;
   }
 
   if (message.type === "GET_VIDEO_INFO") {
@@ -93,88 +173,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((err) => {
         sendResponse({ success: false, error: err.message });
       });
-    return true;
+    return true; // Async response
   }
 
-
   if (message.type === "ADD_DOWNLOAD_JOB") {
-    const { url, title, ext, contentLength, audioUrl, audioSize, audioExt, initRange, indexRange, audioInitRange, audioIndexRange, trimRange, selectedSubtitles } = message;
+    const jobPayload = {
+      type: "NEW_DOWNLOAD_JOB",
+      url: message.url,
+      title: message.title,
+      ext: message.ext,
+      contentLength: message.contentLength,
+      audioUrl: message.audioUrl,
+      audioSize: message.audioSize,
+      audioExt: message.audioExt,
+      initRange: message.initRange,
+      indexRange: message.indexRange,
+      audioInitRange: message.audioInitRange,
+      audioIndexRange: message.audioIndexRange,
+      trimRange: message.trimRange,
+      selectedSubtitles: message.selectedSubtitles
+    };
 
-    // Send response synchronously to close the channel cleanly and avoid warnings
     sendResponse({ success: true });
 
-    // Check if dashboard/downloader tab is already open
     const targetUrl = chrome.runtime.getURL("tabs/download.html");
     chrome.tabs.query({}, (tabs) => {
-      const existingTab = tabs.find(t => t.url && t.url.startsWith(targetUrl));
+      const existingTab = tabs.find((t) => t.url && t.url.startsWith(targetUrl));
 
       if (existingTab && existingTab.id !== undefined) {
-        // Send a message to the existing tab to add the job
-        chrome.tabs.sendMessage(existingTab.id, {
-          type: "NEW_DOWNLOAD_JOB",
-          url,
-          title,
-          ext,
-          contentLength,
-          audioUrl,
-          audioSize,
-          audioExt,
-          initRange,
-          indexRange,
-          audioInitRange,
-          audioIndexRange,
-          trimRange,
-          selectedSubtitles
-        }).catch(() => { });
-        // Focus the existing tab
+        chrome.tabs.sendMessage(existingTab.id, jobPayload).catch(() => {});
         chrome.tabs.update(existingTab.id, { active: true });
       } else {
-        // Create new tab and pass the parameters
-        let downloadPageUrl = `${targetUrl}?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&ext=${ext}&contentLength=${contentLength || ""}`;
-        if (audioUrl) {
-          downloadPageUrl += `&audioUrl=${encodeURIComponent(audioUrl)}`;
-        }
-        if (audioSize) {
-          downloadPageUrl += `&audioSize=${encodeURIComponent(audioSize)}`;
-        }
-        if (audioExt) {
-          downloadPageUrl += `&audioExt=${encodeURIComponent(audioExt)}`;
-        }
-        if (initRange) {
-          downloadPageUrl += `&initRange=${encodeURIComponent(JSON.stringify(initRange))}`;
-        }
-        if (indexRange) {
-          downloadPageUrl += `&indexRange=${encodeURIComponent(JSON.stringify(indexRange))}`;
-        }
-        if (audioInitRange) {
-          downloadPageUrl += `&audioInitRange=${encodeURIComponent(JSON.stringify(audioInitRange))}`;
-        }
-        if (audioIndexRange) {
-          downloadPageUrl += `&audioIndexRange=${encodeURIComponent(JSON.stringify(audioIndexRange))}`;
-        }
-        if (trimRange && trimRange.enabled) {
-          downloadPageUrl += `&trimStart=${trimRange.startTimeSec}&trimEnd=${trimRange.endTimeSec}`;
-        }
-        if (selectedSubtitles && selectedSubtitles.length > 0) {
-          downloadPageUrl += `&subtitles=${encodeURIComponent(JSON.stringify(selectedSubtitles))}`;
-        }
-        chrome.tabs.create({ url: downloadPageUrl, active: true });
+        // Save payload in storage to avoid URL length truncation
+        chrome.storage.local.set({ pendingDownloadJob: jobPayload }, () => {
+          chrome.tabs.create({ url: targetUrl, active: true });
+        });
       }
     });
-    return false; // return false since response was already sent synchronously
+    return false;
   }
 
   // Relay actions to the download page
   if (message.type === "PAUSE_DOWNLOAD" || message.type === "RESUME_DOWNLOAD" || message.type === "CANCEL_DOWNLOAD") {
     const targetUrl = chrome.runtime.getURL("tabs/download.html");
     chrome.tabs.query({}, (tabs) => {
-      const existingTab = tabs.find(t => t.url && t.url.startsWith(targetUrl));
+      const existingTab = tabs.find((t) => t.url && t.url.startsWith(targetUrl));
       if (existingTab && existingTab.id !== undefined) {
-        chrome.tabs.sendMessage(existingTab.id, message).catch(() => { });
+        chrome.tabs.sendMessage(existingTab.id, message).catch(() => {});
       }
     });
     sendResponse({ success: true });
-    return true;
+    return false;
   }
 
   // Registry updates sent by the download page
@@ -194,7 +243,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       timestamp: Date.now()
     });
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
-    return true;
+    sendResponse({ success: true });
+    return false;
   }
 
   if (message.type === "TAB_DOWNLOAD_PROGRESS") {
@@ -212,7 +262,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     }
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
-    return true;
+    sendResponse({ success: true });
+    return false;
   }
 
   if (message.type === "TAB_DOWNLOAD_PAUSE_STATE") {
@@ -225,7 +276,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     }
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
-    return true;
+    sendResponse({ success: true });
+    return false;
   }
 
   if (message.type === "TAB_DOWNLOAD_COMPLETE") {
@@ -238,7 +290,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         percent: 100,
         downloaded: download.total
       });
-      // Save to storage history
       saveToHistory({
         id,
         title: download.title,
@@ -247,54 +298,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         timestamp: Date.now(),
         status: "complete"
       });
-      // Trigger notification
-      chrome.notifications.create(id, {
-        type: "basic",
-        iconUrl: chrome.runtime.getURL("assets/icon.png"),
-        title: "Download Complete",
-        message: `${download.title}.${download.ext} has been successfully downloaded!`
-      }, () => { });
+      try {
+        chrome.notifications.create(id, {
+          type: "basic",
+          iconUrl: chrome.runtime.getURL("assets/icon.png"),
+          title: "Download Complete",
+          message: `${download.title}.${download.ext} has been successfully downloaded!`
+        }, () => {});
+      } catch (_) {}
     }
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
-    return true;
+    sendResponse({ success: true });
+    return false;
   }
 
-  if (message.type === "TAB_DOWNLOAD_FAILED") {
-    const { id, error } = message;
-    const download = activeDownloads.get(id);
-    if (download) {
-      activeDownloads.set(id, {
-        ...download,
-        status: "error",
-        errorMessage: error
-      });
-      // Save to storage history
-      saveToHistory({
-        id,
-        title: download.title,
-        ext: download.ext,
-        total: download.total,
-        timestamp: Date.now(),
-        status: "error",
-        error
-      });
-      // Trigger notification
-      chrome.notifications.create(id, {
-        type: "basic",
-        iconUrl: chrome.runtime.getURL("assets/icon.png"),
-        title: "Download Failed",
-        message: `Failed to download ${download.title}.${download.ext}: ${error}`
-      }, () => { });
-    }
-    broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
-    return true;
-  }
-
-  if (message.type === "TAB_DOWNLOAD_CANCELLED") {
+  if (message.type === "TAB_DOWNLOAD_FAILED" || message.type === "TAB_DOWNLOAD_CANCELLED") {
     const { id } = message;
     activeDownloads.delete(id);
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
-    return true;
+    sendResponse({ success: true });
+    return false;
+  }
+
+  if (message.type === "GET_ACTIVE_DOWNLOADS") {
+    sendResponse({ downloads: Array.from(activeDownloads.values()) });
+    return false;
   }
 
   if (message.type === "CLEAR_DOWNLOAD") {
@@ -302,13 +330,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     activeDownloads.delete(id);
     broadcastToAll({ type: "DOWNLOADS_UPDATED", downloads: Array.from(activeDownloads.values()) });
     sendResponse({ success: true });
-    return true;
+    return false;
   }
 
-  if (message.type === "GET_ALL_DOWNLOADS") {
-    sendResponse({
-      downloads: Array.from(activeDownloads.values())
-    });
-    return true;
-  }
+  return false;
 });

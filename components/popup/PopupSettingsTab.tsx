@@ -6,26 +6,61 @@ interface PopupSettingsTabProps {
   defaultDirName: string | null;
   chunkSize: number;
   concurrency: number;
+  saveMode?: "directory" | "browser";
   handleSelectDirectory: () => void;
   handleClearDirectory: () => void;
   setChunkSize: (val: number) => void;
   setConcurrency: (val: number) => void;
+  setSaveMode?: (val: "directory" | "browser") => void;
 }
 
 export const PopupSettingsTab: React.FC<PopupSettingsTabProps> = ({
   defaultDirName,
   chunkSize,
   concurrency,
+  saveMode = "directory",
   handleSelectDirectory,
   handleClearDirectory,
   setChunkSize,
-  setConcurrency
+  setConcurrency,
+  setSaveMode
 }) => {
   const { theme, themeConfig, setTheme } = useTheme();
 
   return (
     <div className="flex flex-col gap-4 flex-1">
       <h3 className="text-sm font-bold">Extension Settings</h3>
+
+      {/* Save Mode Selector */}
+      <div className={`${themeConfig.card} ${themeConfig.radius} p-3.5 flex flex-col gap-2`}>
+        <span className="text-xs font-bold block">
+          File Save Mode
+        </span>
+        <div className="flex flex-col gap-1.5 mt-1">
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+            <input
+              type="radio"
+              name="popupSaveMode"
+              value="directory"
+              checked={saveMode === "directory"}
+              onChange={() => setSaveMode && setSaveMode("directory")}
+              className="accent-violet-500 w-3.5 h-3.5 cursor-pointer"
+            />
+            <span className="font-semibold">Direct Folder Save (File System API)</span>
+          </label>
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+            <input
+              type="radio"
+              name="popupSaveMode"
+              value="browser"
+              checked={saveMode === "browser"}
+              onChange={() => setSaveMode && setSaveMode("browser")}
+              className="accent-violet-500 w-3.5 h-3.5 cursor-pointer"
+            />
+            <span className="font-semibold">Browser Anchor Download (Chrome Downloads)</span>
+          </label>
+        </div>
+      </div>
 
       {/* Theme Selector */}
       <div className={`${themeConfig.card} ${themeConfig.radius} p-3.5 flex flex-col gap-2`}>

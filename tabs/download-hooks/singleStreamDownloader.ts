@@ -5,6 +5,14 @@ import type { JobState } from "./types";
 import { runFFmpegMerge, mergeChunksToBuffer } from "./ffmpegMerge";
 import { fetchChunkWithRetry, downloadRangeInParallel } from "./chunkDownloader";
 
+function safeSendMessage(message: any) {
+  try {
+    if (typeof chrome !== "undefined" && chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage(message).catch(() => {});
+    }
+  } catch (_) {}
+}
+
 export async function processSingleStreamDownload(
   job: JobState,
   currentChunkSize: number,
@@ -12,6 +20,16 @@ export async function processSingleStreamDownload(
   refreshHistory: () => void,
   processQueue: () => void
 ): Promise<void> {
+  console.log("🚀 [processSingleStreamDownload START]", {
+    id: job.id,
+    title: job.title,
+    ext: job.ext,
+    trimRange: job.trimRange,
+    initRange: job.initRange,
+    indexRange: job.indexRange,
+    totalSize: job.totalSize
+  });
+
   // 1. SIDX Smart byte-range trimming for single stream
   if (job.trimRange && job.trimRange.enabled) {
     try {
@@ -22,7 +40,11 @@ export async function processSingleStreamDownload(
       }
 
       if (sidx) {
-        console.log("Using SIDX Smart Byte-Range Downloader for Single Stream");
+        console.log("🔥 [processSingleStreamDownload SIDX MATCH SUCCESS]", {
+          range: `${sidx.rangeStart}-${sidx.rangeEnd}`,
+          subsegmentStartSec: sidx.subsegmentStartSec
+        });
+
         const rangeSize = sidx.rangeEnd - sidx.rangeStart + 1;
         let sidxDownloaded = 0;
 
@@ -44,7 +66,7 @@ export async function processSingleStreamDownload(
           const remaining = rangeSize - sidxDownloaded;
           job.eta = job.speed > 0 ? remaining / job.speed : 0;
 
-          chrome.runtime.sendMessage({
+          safeSendMessage({
             type: "TAB_DOWNLOAD_PROGRESS",
             id: job.id,
             percent: job.percent,
@@ -65,6 +87,11 @@ export async function processSingleStreamDownload(
           updateSidxProgress
         );
 
+        console.log("📦 [processSingleStreamDownload Substream Downloaded]", {
+          substreamBytes: substream.byteLength,
+          initBytes: sidx.initBytes.byteLength
+        });
+
         const fullBuf = new Uint8Array(sidx.initBytes.byteLength + substream.byteLength);
         fullBuf.set(sidx.initBytes, 0);
         fullBuf.set(substream, sidx.initBytes.byteLength);
@@ -75,7 +102,16 @@ export async function processSingleStreamDownload(
           vSeek
         };
 
+        console.log("🎬 [processSingleStreamDownload Calling runFFmpegMerge]", {
+          fullBufLength: fullBuf.byteLength,
+          sidxTrimRange
+        });
+
         const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, sidxTrimRange);
+
+        console.log("💾 [processSingleStreamDownload Writing output to disk]", {
+          trimmedBufLength: trimmedBuf.byteLength
+        });
 
         await job.writableStream.write(trimmedBuf);
         await job.writableStream.close();
@@ -84,7 +120,9 @@ export async function processSingleStreamDownload(
         job.percent = 100;
         job.downloadedBytes = trimmedBuf.byteLength;
 
-        chrome.runtime.sendMessage({
+        console.log("🎉 [processSingleStreamDownload COMPLETE]", { savedSize: trimmedBuf.byteLength });
+
+        safeSendMessage({
           type: "TAB_DOWNLOAD_COMPLETE",
           id: job.id
         });
@@ -92,13 +130,16 @@ export async function processSingleStreamDownload(
         refreshHistory();
         processQueue();
         return;
+      } else {
+        console.warn("⚠️ [processSingleStreamDownload SIDX MATCH FAILED] Falling back to full stream trim...");
       }
     } catch (sidxErr) {
-      console.warn("SIDX single-stream byte-range download failed, falling back to full stream trim:", sidxErr);
+      console.warn("⚠️ [processSingleStreamDownload SIDX ERROR] Falling back to full stream trim:", sidxErr);
     }
   }
 
   // 2. Standard progressive chunk downloading & sequential writing
+  console.log("📦 [processSingleStreamDownload SECTION 2] Full stream download fallback...");
   const totalChunks = Math.ceil(job.totalSize / currentChunkSize);
 
   const writeSequentialChunks = async (j: JobState) => {
@@ -132,7 +173,7 @@ export async function processSingleStreamDownload(
       j.downloadedChunks.delete(idx);
       j.nextChunkToWrite++;
 
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         type: "TAB_DOWNLOAD_PROGRESS",
         id: j.id,
         percent: j.percent,
@@ -171,7 +212,7 @@ export async function processSingleStreamDownload(
             }
             job.percent = Math.round((job.downloadedBytes / job.totalSize) * 100);
 
-            chrome.runtime.sendMessage({
+            safeSendMessage({
               type: "TAB_DOWNLOAD_PROGRESS",
               id: job.id,
               percent: job.percent,
@@ -182,7 +223,9 @@ export async function processSingleStreamDownload(
             });
 
             if (job.downloadedChunks.size === totalChunks && job.status === "downloading") {
+              job.status = "processing" as any;
               const fullBuf = mergeChunksToBuffer(job.downloadedChunks, totalChunks);
+              job.downloadedChunks.clear();
               const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, job.trimRange);
 
               await job.writableStream.write(trimmedBuf);
@@ -192,7 +235,7 @@ export async function processSingleStreamDownload(
               job.percent = 100;
               job.downloadedBytes = trimmedBuf.byteLength;
 
-              chrome.runtime.sendMessage({
+              safeSendMessage({
                 type: "TAB_DOWNLOAD_COMPLETE",
                 id: job.id
               });
@@ -218,7 +261,7 @@ export async function processSingleStreamDownload(
               console.warn("Failed to close writable stream:", err);
             }
 
-            chrome.runtime.sendMessage({
+            safeSendMessage({
               type: "TAB_DOWNLOAD_COMPLETE",
               id: job.id
             });
@@ -235,7 +278,7 @@ export async function processSingleStreamDownload(
           job.errorMessage = err.message || "Network error";
           try { await job.writableStream.abort(); } catch (_) { }
 
-          chrome.runtime.sendMessage({
+          safeSendMessage({
             type: "TAB_DOWNLOAD_FAILED",
             id: job.id,
             error: job.errorMessage

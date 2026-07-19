@@ -10,6 +10,14 @@ import {
   downloadRangeInParallel
 } from "./chunkDownloader";
 
+function safeSendMessage(message: any) {
+  try {
+    if (typeof chrome !== "undefined" && chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage(message).catch(() => {});
+    }
+  } catch (_) {}
+}
+
 export async function processAdaptiveDownload(
   job: JobState,
   currentChunkSize: number,
@@ -19,6 +27,19 @@ export async function processAdaptiveDownload(
 ): Promise<void> {
   if (!job.audioUrl) return;
 
+  console.log("🚀 [processAdaptiveDownload START]", {
+    id: job.id,
+    title: job.title,
+    ext: job.ext,
+    trimRange: job.trimRange,
+    initRange: job.initRange,
+    indexRange: job.indexRange,
+    audioInitRange: job.audioInitRange,
+    audioIndexRange: job.audioIndexRange,
+    totalSize: job.totalSize,
+    audioSize: job.audioSize
+  });
+
   // 1. Try SIDX smart byte-range downloading if trimming is enabled
   if (job.trimRange && job.trimRange.enabled) {
     try {
@@ -26,22 +47,45 @@ export async function processAdaptiveDownload(
       let aSidx = job.sidxAudioInfo;
 
       if (!vSidx || !aSidx) {
+        console.log("🔍 [processAdaptiveDownload] Resolving Video & Audio SIDX in parallel...");
         const [vRes, aRes] = await Promise.all([
           fetchSidxByteRange(job.url, job.trimRange.startTimeSec, job.trimRange.endTimeSec, job.initRange, job.indexRange),
           fetchSidxByteRange(job.audioUrl, job.trimRange.startTimeSec, job.trimRange.endTimeSec, job.audioInitRange, job.audioIndexRange)
         ]);
         vSidx = vRes || undefined;
         aSidx = aRes || undefined;
-        job.sidxVideoInfo = vSidx;
-        job.sidxAudioInfo = aSidx;
       }
 
+      // Fallback for audio SIDX if missing (e.g. WebM/Opus audio track)
+      if (vSidx && !aSidx && job.audioSize && job.audioSize > 0) {
+        const estDuration = vSidx.totalDurationSec || Math.max(job.trimRange.endTimeSec, 180);
+        const aStart = Math.floor(job.audioSize * (job.trimRange.startTimeSec / estDuration));
+        const aEnd = Math.min(job.audioSize - 1, Math.ceil(job.audioSize * (job.trimRange.endTimeSec / estDuration)));
+        console.log(`💡 [processAdaptiveDownload] Audio SIDX missing. Using proportional audio range fallback: ${aStart}-${aEnd} (${aEnd - aStart + 1} bytes) based on stream duration ${estDuration}s`);
+        aSidx = {
+          initBytes: new Uint8Array(0),
+          rangeStart: aStart,
+          rangeEnd: aEnd,
+          subsegmentStartSec: job.trimRange.startTimeSec
+        };
+      }
+
+      job.sidxVideoInfo = vSidx;
+      job.sidxAudioInfo = aSidx;
+
       if (vSidx && aSidx) {
-        console.log("Using SIDX Smart Byte-Range Downloader for Adaptive Video + Audio");
         const vRangeSize = vSidx.rangeEnd - vSidx.rangeStart + 1;
         const aRangeSize = aSidx.rangeEnd - aSidx.rangeStart + 1;
         const sidxTotalPayload = vRangeSize + aRangeSize;
         job.totalSize = sidxTotalPayload;
+
+        console.log("🔥 [processAdaptiveDownload SIDX MATCH SUCCESS]", {
+          vRange: `${vSidx.rangeStart}-${vSidx.rangeEnd} (${vRangeSize} bytes)`,
+          aRange: `${aSidx.rangeStart}-${aSidx.rangeEnd} (${aRangeSize} bytes)`,
+          totalPayload: sidxTotalPayload,
+          vSubStartSec: vSidx.subsegmentStartSec,
+          aSubStartSec: aSidx.subsegmentStartSec
+        });
 
         let sidxDownloaded = 0;
         const updateSidxProgress = (addedBytes: number) => {
@@ -62,7 +106,7 @@ export async function processAdaptiveDownload(
           const remaining = sidxTotalPayload - sidxDownloaded;
           job.eta = job.speed > 0 ? remaining / job.speed : 0;
 
-          chrome.runtime.sendMessage({
+          safeSendMessage({
             type: "TAB_DOWNLOAD_PROGRESS",
             id: job.id,
             percent: job.percent,
@@ -78,13 +122,22 @@ export async function processAdaptiveDownload(
           downloadRangeInParallel(job.audioUrl, aSidx.rangeStart, aSidx.rangeEnd, currentChunkSize, currentConcurrency, job, updateSidxProgress)
         ]);
 
+        console.log("📦 [processAdaptiveDownload Substreams Downloaded]", {
+          vSubstreamBytes: vSubstream.byteLength,
+          aSubstreamBytes: aSubstream.byteLength
+        });
+
         const videoBuf = new Uint8Array(vSidx.initBytes.byteLength + vSubstream.byteLength);
         videoBuf.set(vSidx.initBytes, 0);
         videoBuf.set(vSubstream, vSidx.initBytes.byteLength);
 
         const audioBuf = new Uint8Array(aSidx.initBytes.byteLength + aSubstream.byteLength);
-        audioBuf.set(aSidx.initBytes, 0);
-        audioBuf.set(aSubstream, aSidx.initBytes.byteLength);
+        if (aSidx.initBytes.byteLength > 0) {
+          audioBuf.set(aSidx.initBytes, 0);
+          audioBuf.set(aSubstream, aSidx.initBytes.byteLength);
+        } else {
+          audioBuf.set(aSubstream, 0);
+        }
 
         const vSeek = Math.max(0, job.trimRange.startTimeSec - vSidx.subsegmentStartSec);
         const aSeek = Math.max(0, job.trimRange.startTimeSec - aSidx.subsegmentStartSec);
@@ -117,6 +170,12 @@ export async function processAdaptiveDownload(
           }
         }
 
+        console.log("🎬 [processAdaptiveDownload Calling runFFmpegMerge]", {
+          videoBufLength: videoBuf.byteLength,
+          audioBufLength: audioBuf.byteLength,
+          sidxTrimRange
+        });
+
         const mergedBuf = await runFFmpegMerge(
           videoBuf,
           audioBuf,
@@ -126,6 +185,10 @@ export async function processAdaptiveDownload(
           subtitleBuffers
         );
 
+        console.log("💾 [processAdaptiveDownload Writing merged output to disk]", {
+          mergedBufLength: mergedBuf.byteLength
+        });
+
         await job.writableStream.write(mergedBuf);
         await job.writableStream.close();
 
@@ -133,7 +196,9 @@ export async function processAdaptiveDownload(
         job.percent = 100;
         job.downloadedBytes = mergedBuf.byteLength;
 
-        chrome.runtime.sendMessage({
+        console.log("🎉 [processAdaptiveDownload COMPLETE] Saved file size:", mergedBuf.byteLength);
+
+        safeSendMessage({
           type: "TAB_DOWNLOAD_COMPLETE",
           id: job.id
         });
@@ -141,13 +206,16 @@ export async function processAdaptiveDownload(
         refreshHistory();
         processQueue();
         return;
+      } else {
+        console.warn("⚠️ [processAdaptiveDownload SIDX MATCH FAILED] Falling back to full stream adaptive trim...");
       }
     } catch (sidxErr) {
-      console.warn("SIDX byte-range download failed, falling back to full stream trim:", sidxErr);
+      console.warn("⚠️ [processAdaptiveDownload SIDX ERROR] Falling back to full stream trim:", sidxErr);
     }
   }
 
   // 2. Standard full stream adaptive fetching for video + audio
+  console.log("📦 [processAdaptiveDownload SECTION 2] Full stream download fallback...");
   const audioSize = job.audioSize || 0;
   let videoSize = job.totalSize;
   if (audioSize > 0 && job.totalSize > audioSize) {
@@ -186,7 +254,7 @@ export async function processAdaptiveDownload(
     const remaining = totalSize - job.downloadedBytes;
     job.eta = job.speed > 0 ? remaining / job.speed : 0;
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: "TAB_DOWNLOAD_PROGRESS",
       id: job.id,
       percent: job.percent,
@@ -214,7 +282,7 @@ export async function processAdaptiveDownload(
           const chunkIdx = job.launchedVideoChunks!++;
           activeVideoFetches.add(chunkIdx);
 
-          fetchChunkWithRetry(job, chunkIdx, totalVideoChunks, currentChunkSize)
+          fetchChunkWithRetry(job, chunkIdx, totalVideoChunks, currentChunkSize, videoSize)
             .then((arrayBuffer) => {
               activeVideoFetches.delete(chunkIdx);
               if (!arrayBuffer) {
@@ -280,10 +348,10 @@ export async function processAdaptiveDownload(
   };
 
   try {
-    await downloadVideo();
-    await downloadAudio();
+    // Run video and audio stream downloads in parallel
+    await Promise.all([downloadVideo(), downloadAudio()]);
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: "TAB_DOWNLOAD_PROGRESS",
       id: job.id,
       percent: 99,
@@ -295,6 +363,10 @@ export async function processAdaptiveDownload(
 
     const videoBuf = mergeChunksToBuffer(job.adaptiveVideoChunks!, totalVideoChunks);
     const audioBuf = mergeChunksToBuffer(job.adaptiveAudioChunks!, totalAudioChunks);
+
+    // Free memory by clearing chunk maps prior to FFmpeg WASM processing
+    job.adaptiveVideoChunks?.clear();
+    job.adaptiveAudioChunks?.clear();
 
     const subtitleBuffers: { name: string; code: string; data: Uint8Array }[] = [];
     if (job.selectedSubtitles && job.selectedSubtitles.length > 0) {
@@ -339,7 +411,7 @@ export async function processAdaptiveDownload(
     job.percent = 100;
     job.downloadedBytes = totalSize;
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: "TAB_DOWNLOAD_COMPLETE",
       id: job.id
     });
@@ -354,7 +426,7 @@ export async function processAdaptiveDownload(
     try {
       await job.writableStream.abort();
     } catch (_) {}
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: "TAB_DOWNLOAD_FAILED",
       id: job.id,
       error: job.errorMessage

@@ -24,6 +24,21 @@ export interface SidxRangeResult {
   rangeStart: number;
   rangeEnd: number;
   subsegmentStartSec: number;
+  totalDurationSec?: number;
+}
+
+export function buildChunkUrl(baseUrl: string, startByte: number, endByte: number): string {
+  // Cleanly strip any existing range= parameter to avoid sending duplicate range headers to YouTube servers
+  let cleaned = baseUrl.replace(/([?&])range=[^&]*(&|$)/g, (match, p1, p2) => (p2 === "&" ? p1 : ""));
+  if (cleaned.endsWith("?") || cleaned.endsWith("&")) {
+    cleaned = cleaned.slice(0, -1);
+  }
+  const sep = cleaned.includes("?") ? "&" : "?";
+  let url = `${cleaned}${sep}range=${startByte}-${endByte}`;
+  if (!url.includes("ext_download=true")) {
+    url = `${url}&ext_download=true`;
+  }
+  return url;
 }
 
 /**
@@ -37,32 +52,41 @@ export async function fetchSidxByteRange(
   indexRange?: { start: string; end: string },
   fetcherFn?: (url: string, startByte: number, endByte: number) => Promise<ArrayBuffer>
 ): Promise<SidxRangeResult | null> {
-  const fetcher = fetcherFn || (async (u, s, e) => {
-    let chunkUrl = u;
-    if (chunkUrl.includes("range=")) {
-      chunkUrl = chunkUrl.replace(/([?&])range=[^&]*/, `$1range=${s}-${e}`);
-    } else {
-      const sep = chunkUrl.includes("?") ? "&" : "?";
-      chunkUrl = `${chunkUrl}${sep}range=${s}-${e}`;
-    }
-    if (!chunkUrl.includes("ext_download=true")) {
-      const sep = chunkUrl.includes("?") ? "&" : "?";
-      chunkUrl = `${chunkUrl}${sep}ext_download=true`;
-    }
-    const res = await fetch(chunkUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.arrayBuffer();
+  console.log("🔍 [fetchSidxByteRange] Resolving range:", {
+    targetStartSec,
+    targetEndSec,
+    initRange,
+    indexRange
   });
 
-  let initEnd = initRange ? parseInt(initRange.end, 10) : 0;
-  let idxStart = indexRange ? parseInt(indexRange.start, 10) : 0;
-  let idxEnd = indexRange ? parseInt(indexRange.end, 10) : 0;
+  const fetcher = fetcherFn || (async (u, s, e) => {
+    const chunkUrl = buildChunkUrl(u, s, e);
+    let attempt = 0;
+    const maxAttempts = 5;
+    while (attempt < maxAttempts) {
+      try {
+        const res = await fetch(chunkUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.arrayBuffer();
+      } catch (err) {
+        attempt++;
+        if (attempt >= maxAttempts) throw err;
+        await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
+      }
+    }
+    throw new Error(`Failed to fetch byte range ${s}-${e}`);
+  });
+
+  let initEnd = initRange ? parseInt(String(initRange.end), 10) : 0;
+  let idxStart = indexRange ? parseInt(String(indexRange.start), 10) : 0;
+  let idxEnd = indexRange ? parseInt(String(indexRange.end), 10) : 0;
 
   let initBuf: Uint8Array;
   let sidxBuf: Uint8Array;
 
   try {
     if (initEnd > 0 && idxEnd > 0) {
+      console.log(`🔍 [fetchSidxByteRange] Using explicit initRange (0-${initEnd}) and indexRange (${idxStart}-${idxEnd})`);
       const [initAb, sidxAb] = await Promise.all([
         fetcher(streamUrl, 0, initEnd),
         fetcher(streamUrl, idxStart, idxEnd)
@@ -70,29 +94,44 @@ export async function fetchSidxByteRange(
       initBuf = new Uint8Array(initAb);
       sidxBuf = new Uint8Array(sidxAb);
     } else {
-      // Fallback: fetch header 0-4095
-      const headerAb = await fetcher(streamUrl, 0, 4095);
-      const headerBuf = new Uint8Array(headerAb);
-      const view = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
+      // Fallback: fetch 64KB header first, then 256KB header if needed for long videos
+      console.log("🔍 [fetchSidxByteRange] Missing indexRange/initRange, fetching header fallback (0-65535)...");
+      let headerAb = await fetcher(streamUrl, 0, 65535);
+      let headerBuf = new Uint8Array(headerAb);
+      let view = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
 
       let offset = 0;
       let foundSidxOffset = -1;
       let foundSidxSize = -1;
       let foundMoovEnd = -1;
 
-      while (offset + 8 <= headerBuf.length) {
-        const size = view.getUint32(offset, false);
-        const type = String.fromCharCode(headerBuf[offset + 4], headerBuf[offset + 5], headerBuf[offset + 6], headerBuf[offset + 7]);
-        if (size < 8) break;
+      const scanHeader = (buf: Uint8Array, v: DataView) => {
+        let off = 0;
+        while (off + 8 <= buf.length) {
+          const size = v.getUint32(off, false);
+          if (size < 8) break;
+          const type = String.fromCharCode(buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7]);
 
-        if (type === "moov") {
-          foundMoovEnd = offset + size - 1;
-        } else if (type === "sidx") {
-          foundSidxOffset = offset;
-          foundSidxSize = size;
-          break;
+          if (type === "moov") {
+            foundMoovEnd = off + size - 1;
+          } else if (type === "sidx") {
+            foundSidxOffset = off;
+            foundSidxSize = size;
+            break;
+          }
+          off += size;
         }
-        offset += size;
+      };
+
+      scanHeader(headerBuf, view);
+
+      if (foundSidxOffset === -1) {
+        console.log("🔍 [fetchSidxByteRange] SIDX not in 64KB, trying 256KB header fallback...");
+        headerAb = await fetcher(streamUrl, 0, 262143);
+        headerBuf = new Uint8Array(headerAb);
+        view = new DataView(headerBuf.buffer, headerBuf.byteOffset, headerBuf.byteLength);
+        foundMoovEnd = -1;
+        scanHeader(headerBuf, view);
       }
 
       if (foundSidxOffset !== -1 && foundSidxSize > 0) {
@@ -101,7 +140,9 @@ export async function fetchSidxByteRange(
         idxEnd = foundSidxOffset + foundSidxSize - 1;
         initBuf = headerBuf.subarray(0, initEnd + 1);
         sidxBuf = headerBuf.subarray(idxStart, idxEnd + 1);
+        console.log(`🔍 [fetchSidxByteRange] Found SIDX box in header fallback: ${idxStart}-${idxEnd}`);
       } else {
+        console.warn("⚠️ [fetchSidxByteRange] No SIDX box found in header fallbacks!");
         return null;
       }
     }
@@ -111,16 +152,25 @@ export async function fetchSidxByteRange(
       (s) => s.endTimeSec > targetStartSec && s.startTimeSec < targetEndSec
     );
 
-    if (matching.length === 0) return null;
+    if (matching.length === 0) {
+      console.warn("⚠️ [fetchSidxByteRange] No matching subsegments found for target time range!");
+      return null;
+    }
 
-    return {
+    const totalDurationSec = parsed.subsegments.length > 0 ? parsed.subsegments[parsed.subsegments.length - 1].endTimeSec : 0;
+
+    const result: SidxRangeResult = {
       initBytes: initBuf,
       rangeStart: matching[0].startByte,
       rangeEnd: matching[matching.length - 1].endByte,
-      subsegmentStartSec: matching[0].startTimeSec
+      subsegmentStartSec: matching[0].startTimeSec,
+      totalDurationSec
     };
+
+    console.log(`✅ [fetchSidxByteRange SUCCESS] Range: ${result.rangeStart}-${result.rangeEnd} (${result.rangeEnd - result.rangeStart + 1} bytes), SubStart: ${result.subsegmentStartSec}s, Matching Subsegments: ${matching.length}`);
+    return result;
   } catch (err) {
-    console.warn("fetchSidxByteRange error:", err);
+    console.warn("⚠️ [fetchSidxByteRange error]", err);
     return null;
   }
 }
@@ -129,15 +179,20 @@ export async function fetchSidxByteRange(
  * Parse an MP4 SIDX (Segment Index) box from a Uint8Array buffer
  */
 export function parseSidx(buf: Uint8Array, indexRangeEnd: number): ParsedSidx {
-  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  // Ensure we operate on a clean Uint8Array with byteOffset = 0
+  const sidxBytes = (buf.byteOffset === 0 && buf.byteLength === buf.buffer.byteLength)
+    ? buf
+    : new Uint8Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+
+  const view = new DataView(sidxBytes.buffer, sidxBytes.byteOffset, sidxBytes.byteLength);
 
   // Check box type 'sidx'
-  const type = String.fromCharCode(buf[4], buf[5], buf[6], buf[7]);
+  const type = String.fromCharCode(sidxBytes[4], sidxBytes[5], sidxBytes[6], sidxBytes[7]);
   if (type !== "sidx") {
     throw new Error(`Invalid SIDX box type: '${type}'`);
   }
 
-  const version = buf[8];
+  const version = sidxBytes[8];
   const timescale = view.getUint32(16, false); // Big-endian
 
   let offset = 20;

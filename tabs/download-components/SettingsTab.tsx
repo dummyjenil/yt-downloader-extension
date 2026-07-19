@@ -7,16 +7,18 @@ interface SettingsTabProps {
   chunkSize: number;
   concurrency: number;
   maxConcurrentJobs: number;
+  saveMode?: "directory" | "browser";
   defaultDirName: string | null;
   handleSelectDirectory: () => void;
   handleClearDirectory: () => void;
-  updateSetting: (key: "chunkSize" | "concurrency" | "maxConcurrentJobs", val: number) => void;
+  updateSetting: (key: "chunkSize" | "concurrency" | "maxConcurrentJobs" | "saveMode", val: any) => void;
 }
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   chunkSize,
   concurrency,
   maxConcurrentJobs,
+  saveMode = "directory",
   defaultDirName,
   handleSelectDirectory,
   handleClearDirectory,
@@ -108,6 +110,53 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     <div className={`${themeConfig.card} ${themeConfig.radius} p-8 ${themeConfig.shadow}`}>
       <h2 className="text-2xl font-extrabold mb-6">Extension Settings</h2>
 
+      {/* Save Mode Selector */}
+      <div className="mb-7">
+        <label className="block text-sm font-bold mb-2">
+          File Storage & Save Mode
+        </label>
+        <p className={`text-xs ${themeConfig.mutedText} mb-3 leading-relaxed`}>
+          Choose how downloaded files are written to disk.
+        </p>
+        <div className="flex flex-col gap-2 max-w-lg">
+          <label className={`flex items-start gap-3 p-3 ${themeConfig.input} ${themeConfig.radius} cursor-pointer select-none`}>
+            <input
+              type="radio"
+              name="saveMode"
+              value="directory"
+              checked={saveMode === "directory"}
+              onChange={() => updateSetting("saveMode", "directory")}
+              className="mt-0.5 accent-violet-500 w-4 h-4 cursor-pointer"
+            />
+            <div className="flex flex-col">
+              <span className="text-xs font-bold">1. Direct Folder Save (File System API)</span>
+              <span className={`text-[11px] ${themeConfig.mutedText} mt-0.5`}>
+                Saves directly into your selected custom folder without opening save popups.
+              </span>
+            </div>
+          </label>
+
+          <label className={`flex items-start gap-3 p-3 ${themeConfig.input} ${themeConfig.radius} cursor-pointer select-none`}>
+            <input
+              type="radio"
+              name="saveMode"
+              value="browser"
+              checked={saveMode === "browser"}
+              onChange={() => updateSetting("saveMode", "browser")}
+              className="mt-0.5 accent-violet-500 w-4 h-4 cursor-pointer"
+            />
+            <div className="flex flex-col">
+              <span className="text-xs font-bold">2. Browser Anchor Download (Chrome Downloads)</span>
+              <span className={`text-[11px] ${themeConfig.mutedText} mt-0.5`}>
+                Downloads directly via Chrome's download manager into your default Downloads folder without prompt popups.
+              </span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <hr className={`border-t ${themeConfig.border} my-6`} />
+
       {/* Visual Theme Picker */}
       <div className="mb-7">
         <label className="block text-sm font-bold mb-2">
@@ -137,7 +186,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           Default Download Folder
         </label>
         <p className={`text-xs ${themeConfig.mutedText} mb-3 leading-relaxed`}>
-          Choose a default directory handle. When set, YTD will directly download streams into this folder without opening save-file picker popups every time.
+          Choose a default directory handle for Direct Folder Save mode.
         </p>
         <div className="flex gap-3 items-center">
           <button

@@ -1,32 +1,14 @@
-import { getDirectoryHandle } from "../../utils/storage";
+import { setupDestinationStream, type SaveMode } from "./streamSetup";
 import { jsonToWordSrt } from "../../utils/subtitle";
 import type { JobState } from "./types";
 
 export async function processSrtDownload(
   job: JobState,
   refreshHistory: () => void,
-  processQueue: () => void
+  processQueue: () => void,
+  saveMode: SaveMode = "directory"
 ): Promise<void> {
-  let writableStream: any = null;
-  try {
-    const dirHandle = await getDirectoryHandle();
-    if (dirHandle) {
-      const fileHandle = await dirHandle.getFileHandle(`${job.title}.${job.ext}`, { create: true });
-      writableStream = await fileHandle.createWritable();
-    }
-  } catch (_) {}
-
-  if (!writableStream) {
-    if ((window as any).showSaveFilePicker) {
-      const pickerOptions = {
-        suggestedName: `${job.title}.${job.ext}`,
-        types: [{ description: "SRT Subtitle File", accept: { "text/plain": [".srt"] } }]
-      };
-      const fileHandle = await (window as any).showSaveFilePicker(pickerOptions);
-      writableStream = await fileHandle.createWritable();
-    }
-  }
-
+  const writableStream = await setupDestinationStream(job, undefined, saveMode);
   if (!writableStream) throw new Error("Could not initialize destination file stream");
   job.writableStream = writableStream;
 

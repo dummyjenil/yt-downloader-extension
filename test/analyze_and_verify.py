@@ -9,12 +9,11 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Default values if no arguments provided
+# Default values for testing
 DEFAULT_VIDEO_ID = "C8QYVwX0M6g"
 DEFAULT_START_TIME = 17.0
 DEFAULT_END_TIME = 79.0
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_OUTPUT = os.path.join(TEST_DIR, "sidx_output.mp4")
 
 CHUNK_SIZE = 5 * 1024 * 1024  # 5MB chunks
 CONCURRENCY = 3               # 3 parallel workers
@@ -44,96 +43,132 @@ def parse_time(time_str):
     return float(time_str)
 
 
+def get_file_duration(filepath):
+    """Get actual media duration in seconds using ffprobe."""
+    if not os.path.exists(filepath):
+        return 0.0
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        filepath
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode == 0:
+        try:
+            return float(res.stdout.strip())
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
 def fetch_youtube_streams(video_id):
-    print(f"[1/4] Fetching YouTube streaming URLs for videoId: {video_id}...")
+    """Fetch video, audio, and standard streaming formats from YouTube API with retries."""
     api_key = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
     player_url = f"https://www.youtube.com/youtubei/v1/player?key={api_key}&prettyPrint=false&ext_request=true"
 
-    web_req = urllib.request.Request(
-        player_url,
-        data=json.dumps({
-            "videoId": video_id,
-            "context": {
-                "client": {
-                    "clientName": "WEB",
-                    "clientVersion": "2.20251021.01.00",
-                    "osName": "Windows",
-                    "osVersion": "10.0",
-                    "platform": "DESKTOP"
+    for attempt in range(4):
+        try:
+            web_req = urllib.request.Request(
+                player_url,
+                data=json.dumps({
+                    "videoId": video_id,
+                    "context": {
+                        "client": {
+                            "clientName": "WEB",
+                            "clientVersion": "2.20251021.01.00",
+                            "osName": "Windows",
+                            "osVersion": "10.0",
+                            "platform": "DESKTOP"
+                        }
+                    }
+                }).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 }
-            }
-        }).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-    )
+            )
 
-    visitor_data = ""
-    try:
-        with urllib.request.urlopen(web_req) as resp:
-            data_web = json.loads(resp.read().decode("utf-8"))
-            visitor_data = data_web.get("responseContext", {}).get("visitorData", "")
-    except Exception as e:
-        print(f"   Warning: Failed to fetch visitorData: {e}")
+            visitor_data = ""
+            try:
+                with urllib.request.urlopen(web_req) as resp:
+                    data_web = json.loads(resp.read().decode("utf-8"))
+                    visitor_data = data_web.get("responseContext", {}).get("visitorData", "")
+            except Exception as e:
+                pass
 
-    vr_req = urllib.request.Request(
-        player_url,
-        data=json.dumps({
-            "videoId": video_id,
-            "contentCheckOk": True,
-            "context": {
-                "client": {
-                    "clientName": "ANDROID_VR",
-                    "clientVersion": "1.60.19",
-                    "deviceMake": "Oculus",
-                    "deviceModel": "Quest 3",
-                    "osName": "Android",
-                    "osVersion": "12L",
-                    "androidSdkVersion": "32",
-                    "visitorData": visitor_data
+            vr_req = urllib.request.Request(
+                player_url,
+                data=json.dumps({
+                    "videoId": video_id,
+                    "contentCheckOk": True,
+                    "context": {
+                        "client": {
+                            "clientName": "ANDROID_VR",
+                            "clientVersion": "1.60.19",
+                            "deviceMake": "Oculus",
+                            "deviceModel": "Quest 3",
+                            "osName": "Android",
+                            "osVersion": "12L",
+                            "androidSdkVersion": "32",
+                            "visitorData": visitor_data
+                        }
+                    }
+                }).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
                 }
-            }
-        }).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
-        }
-    )
+            )
 
-    with urllib.request.urlopen(vr_req) as resp:
-        data_vr = json.loads(resp.read().decode("utf-8"))
-        details = data_vr.get("videoDetails", {})
-        title = details.get("title", "Unknown")
-        length_sec = float(details.get("lengthSeconds", 0))
+            with urllib.request.urlopen(vr_req) as resp:
+                data_vr = json.loads(resp.read().decode("utf-8"))
+                details = data_vr.get("videoDetails", {})
+                title = details.get("title", "Unknown")
+                length_sec = float(details.get("lengthSeconds", 0))
 
-        adaptive = data_vr.get("streamingData", {}).get("adaptiveFormats", [])
-        video_format = None
-        audio_format = None
+                streaming_data = data_vr.get("streamingData", {})
+                adaptive = streaming_data.get("adaptiveFormats", [])
+                formats = streaming_data.get("formats", [])
 
-        for f in adaptive:
-            mime = f.get("mimeType", "")
-            if "video/mp4" in mime and "avc1" in mime:
-                if not video_format or int(f.get("contentLength", 0)) > int(video_format.get("contentLength", 0)):
-                    video_format = f
+                video_format = None
+                audio_format = None
+                standard_format = None
 
-        for f in adaptive:
-            mime = f.get("mimeType", "")
-            if "audio/mp4" in mime and "mp4a" in mime:
-                if not audio_format or int(f.get("contentLength", 0)) > int(audio_format.get("contentLength", 0)):
-                    audio_format = f
+                for f in adaptive:
+                    mime = f.get("mimeType", "")
+                    if "video/mp4" in mime and "avc1" in mime:
+                        if not video_format or int(f.get("contentLength", 0)) > int(video_format.get("contentLength", 0)):
+                            video_format = f
 
-        if not video_format or not audio_format:
-            raise RuntimeError("Failed to locate adaptive MP4 video and AAC audio formats")
+                for f in adaptive:
+                    mime = f.get("mimeType", "")
+                    if "audio/mp4" in mime and "mp4a" in mime:
+                        if not audio_format or int(f.get("contentLength", 0)) > int(audio_format.get("contentLength", 0)):
+                            audio_format = f
 
-        print(f"   Title: '{title}' (Total Duration: {length_sec}s)")
-        print(f"   Video Stream: itag {video_format.get('itag')} ({video_format.get('qualityLabel')}), Content-Length: {video_format.get('contentLength')} bytes")
-        print(f"   Audio Stream: itag {audio_format.get('itag')}, Content-Length: {audio_format.get('contentLength')} bytes")
+                for f in formats:
+                    mime = f.get("mimeType", "")
+                    if "video/mp4" in mime:
+                        if not standard_format or int(f.get("contentLength", 0)) > int(standard_format.get("contentLength", 0)):
+                            standard_format = f
 
-        return video_format, audio_format, title
+                if not standard_format and formats:
+                    standard_format = formats[0]
+
+                if video_format or audio_format or standard_format:
+                    print(f"   Title: '{title}' (Duration: {length_sec}s)")
+                    return video_format, audio_format, standard_format, title
+        except Exception as err:
+            if attempt == 3:
+                raise err
+            time.sleep(1)
+
+    raise RuntimeError("Failed to fetch stream details from YouTube API.")
 
 
 def download_chunk(url, start_byte, end_byte):
+    """Download specific byte range from URL."""
     chunk_url = url
     if "range=" in chunk_url:
         chunk_url = re.sub(r"([?&])range=[^&]*", f"\\1range={start_byte}-{end_byte}", chunk_url)
@@ -160,6 +195,7 @@ def download_chunk(url, start_byte, end_byte):
 
 
 def download_stream_parallel_range(url, range_start, range_end, name):
+    """Download range in parallel chunks."""
     range_size = range_end - range_start + 1
     total_chunks = (range_size + CHUNK_SIZE - 1) // CHUNK_SIZE
     chunks = [None] * total_chunks
@@ -187,6 +223,7 @@ def download_stream_parallel_range(url, range_start, range_end, name):
 
 
 def parse_sidx(buf, index_end):
+    """Parse binary SIDX box and return segment list with byte ranges and timestamps."""
     box_size, box_type = struct.unpack(">I4s", buf[:8])
     if box_type != b"sidx":
         raise ValueError("Buffer is not a valid sidx box")
@@ -230,9 +267,13 @@ def parse_sidx(buf, index_end):
 
 
 def get_sidx_byte_range(format_info, stream_url, target_start, target_end):
+    """Resolve init bytes, subsegment byte range, and segment start timestamp from SIDX box."""
     init_end = int(format_info.get("initRange", {}).get("end", 0))
     idx_start = int(format_info.get("indexRange", {}).get("start", 0))
     idx_end = int(format_info.get("indexRange", {}).get("end", 0))
+
+    if init_end == 0 or idx_end == 0:
+        raise ValueError("Format missing initRange or indexRange; SIDX extraction unavailable.")
 
     init_bytes = download_chunk(stream_url, 0, init_end)
     sidx_bytes = download_chunk(stream_url, idx_start, idx_end)
@@ -250,116 +291,291 @@ def get_sidx_byte_range(format_info, stream_url, target_start, target_end):
     return init_bytes, range_start, range_end, segment_start_time
 
 
-def run_sidx_smart_merge(v_path, a_path, out_path, v_start_sec, a_start_sec, target_start, duration):
-    v_seek = max(0.0, target_start - v_start_sec)
-    a_seek = max(0.0, target_start - a_start_sec)
-
-    cmd = [
-        "ffmpeg", "-y", "-v", "warning",
-        "-ss", str(v_seek), "-i", v_path,
-        "-ss", str(a_seek), "-i", a_path,
-        "-t", str(duration),
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "copy",
-        "-bsf:v", "h264_mp4toannexb",
-        "-c:a", "aac",
-        out_path
-    ]
+def execute_ffmpeg(cmd, err_msg):
+    """Run ffmpeg subprocess command with error handling."""
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
-        raise RuntimeError(f"SIDX merge command failed: {res.stderr}")
+        raise RuntimeError(f"{err_msg}: {res.stderr}")
 
 
-def download_sidx_clip(video_id_or_url, start_time_sec, end_time_sec, output_path):
-    video_id = extract_video_id(video_id_or_url)
+def run_mode_audio(video_id, start_time_sec, end_time_sec, output_path):
+    """Audio Only Mode using SIDX byte range extraction."""
     duration_sec = end_time_sec - start_time_sec
-    if duration_sec <= 0:
-        raise ValueError("end_time must be greater than start_time")
+    video_f, audio_f, _, title = fetch_youtube_streams(video_id)
+    if not audio_f:
+        raise RuntimeError("Audio stream format not found")
 
-    print("=" * 60)
-    print("🚀 PURE SIDX-BASED YOUTUBE CLIP DOWNLOADER")
-    print(f"   Video ID:    {video_id}")
-    print(f"   Time Window: {start_time_sec}s -> {end_time_sec}s (Duration: {duration_sec}s)")
-    print(f"   Output File: {output_path}")
-    print("=" * 60)
-
-    # Temporary files
-    temp_dir = os.path.dirname(os.path.abspath(output_path)) or "."
-    v_temp_path = os.path.join(temp_dir, f"_temp_{video_id}_v.mp4")
-    a_temp_path = os.path.join(temp_dir, f"_temp_{video_id}_a.m4a")
+    temp_a_path = os.path.join(TEST_DIR, f"_temp_{video_id}_audio.m4a")
 
     try:
         t0 = time.time()
-        # 1. Fetch formats
-        video_f, audio_f, title = fetch_youtube_streams(video_id)
+        print("   [1/3] Resolving Audio SIDX Byte Range...")
+        a_init, a_rstart, a_rend, a_sub_start = get_sidx_byte_range(audio_f, audio_f["url"], start_time_sec, end_time_sec)
+        print(f"   Audio Subsegment Range: {a_rstart}-{a_rend} ({a_rend - a_rstart + 1} bytes, sub_start: {a_sub_start:.2f}s)")
 
-        full_v_size = int(video_f.get("contentLength", 0))
-        full_a_size = int(audio_f.get("contentLength", 0))
-        full_total = full_v_size + full_a_size
+        print("   [2/3] Downloading Audio Subsegment...")
+        a_bytes = a_init + download_stream_parallel_range(audio_f["url"], a_rstart, a_rend, "Audio Stream")
+        with open(temp_a_path, "wb") as f:
+            f.write(a_bytes)
 
-        # 2. Get SIDX range info & init header
-        print("\n[2/4] Resolving SIDX Byte Ranges for target clip...")
+        print("   [3/3] Trimming Audio with FFmpeg...")
+        a_seek = max(0.0, start_time_sec - a_sub_start)
+        cmd = [
+            "ffmpeg", "-y", "-v", "warning",
+            "-ss", str(a_seek), "-i", temp_a_path,
+            "-t", str(duration_sec),
+            "-c:a", "copy",
+            output_path
+        ]
+        execute_ffmpeg(cmd, "Audio FFmpeg trim failed")
+
+        actual_dur = get_file_duration(output_path)
+        dur_diff = actual_dur - duration_sec
+        print(f"   ✅ Audio Mode Success! Saved to {output_path} ({len(a_bytes)} bytes in {round(time.time() - t0, 2)}s)")
+        print(f"      Duration Verification: Target={duration_sec:.2f}s, Actual={actual_dur:.2f}s (Diff={dur_diff:+.2f}s)")
+    finally:
+        if os.path.exists(temp_a_path):
+            os.remove(temp_a_path)
+
+
+def run_mode_video(video_id, start_time_sec, end_time_sec, output_path):
+    """Video Only Mode using SIDX byte range extraction."""
+    duration_sec = end_time_sec - start_time_sec
+    video_f, audio_f, _, title = fetch_youtube_streams(video_id)
+    if not video_f:
+        raise RuntimeError("Video stream format not found")
+
+    temp_v_path = os.path.join(TEST_DIR, f"_temp_{video_id}_video.mp4")
+
+    try:
+        t0 = time.time()
+        print("   [1/3] Resolving Video SIDX Byte Range...")
+        v_init, v_rstart, v_rend, v_sub_start = get_sidx_byte_range(video_f, video_f["url"], start_time_sec, end_time_sec)
+        print(f"   Video Subsegment Range: {v_rstart}-{v_rend} ({v_rend - v_rstart + 1} bytes, sub_start: {v_sub_start:.2f}s)")
+
+        print("   [2/3] Downloading Video Subsegment...")
+        v_bytes = v_init + download_stream_parallel_range(video_f["url"], v_rstart, v_rend, "Video Stream")
+        with open(temp_v_path, "wb") as f:
+            f.write(v_bytes)
+
+        print("   [3/3] Trimming Video with FFmpeg...")
+        v_seek = max(0.0, start_time_sec - v_sub_start)
+        cmd = [
+            "ffmpeg", "-y", "-v", "warning",
+            "-ss", str(v_seek), "-i", temp_v_path,
+            "-t", str(duration_sec),
+            "-c:v", "copy",
+            output_path
+        ]
+        execute_ffmpeg(cmd, "Video FFmpeg trim failed")
+
+        actual_dur = get_file_duration(output_path)
+        dur_diff = actual_dur - duration_sec
+        print(f"   ✅ Video Mode Success! Saved to {output_path} ({len(v_bytes)} bytes in {round(time.time() - t0, 2)}s)")
+        print(f"      Duration Verification: Target={duration_sec:.2f}s, Actual={actual_dur:.2f}s (Diff={dur_diff:+.2f}s)")
+    finally:
+        if os.path.exists(temp_v_path):
+            os.remove(temp_v_path)
+
+
+def run_mode_fusion(video_id, start_time_sec, end_time_sec, output_path):
+    """Fusion Mode (Video + Audio) using SIDX byte range extraction."""
+    duration_sec = end_time_sec - start_time_sec
+    video_f, audio_f, _, title = fetch_youtube_streams(video_id)
+    if not video_f or not audio_f:
+        raise RuntimeError("Required video and audio formats not found")
+
+    temp_v_path = os.path.join(TEST_DIR, f"_temp_{video_id}_fusion_v.mp4")
+    temp_a_path = os.path.join(TEST_DIR, f"_temp_{video_id}_fusion_a.m4a")
+
+    try:
+        t0 = time.time()
+        print("   [1/4] Resolving Video & Audio SIDX Byte Ranges...")
         v_init, v_rstart, v_rend, v_sub_start = get_sidx_byte_range(video_f, video_f["url"], start_time_sec, end_time_sec)
         a_init, a_rstart, a_rend, a_sub_start = get_sidx_byte_range(audio_f, audio_f["url"], start_time_sec, end_time_sec)
 
-        print(f"   Video Range: {v_rstart}-{v_rend} ({v_rend - v_rstart + 1} bytes, subsegment start: {v_sub_start:.2f}s)")
-        print(f"   Audio Range: {a_rstart}-{a_rend} ({a_rend - a_rstart + 1} bytes, subsegment start: {a_sub_start:.2f}s)")
+        print("   [2/4] Downloading Video Subsegment...")
+        v_bytes = v_init + download_stream_parallel_range(video_f["url"], v_rstart, v_rend, "Video Subsegment")
+        with open(temp_v_path, "wb") as f:
+            f.write(v_bytes)
 
-        # 3. Parallel Download Smart SIDX Ranges
-        print("\n[3/4] Downloading Smart Range Subsegments...")
-        v_sidx_bytes = v_init + download_stream_parallel_range(video_f["url"], v_rstart, v_rend, "Video Subsegment")
-        with open(v_temp_path, "wb") as f:
-            f.write(v_sidx_bytes)
+        print("   [3/4] Downloading Audio Subsegment...")
+        a_bytes = a_init + download_stream_parallel_range(audio_f["url"], a_rstart, a_rend, "Audio Subsegment")
+        with open(temp_a_path, "wb") as f:
+            f.write(a_bytes)
 
-        a_sidx_bytes = a_init + download_stream_parallel_range(audio_f["url"], a_rstart, a_rend, "Audio Subsegment")
-        with open(a_temp_path, "wb") as f:
-            f.write(a_sidx_bytes)
+        print("   [4/4] Merging Video & Audio with FFmpeg...")
+        v_seek = max(0.0, start_time_sec - v_sub_start)
+        a_seek = max(0.0, start_time_sec - a_sub_start)
 
-        sidx_downloaded_size = len(v_sidx_bytes) + len(a_sidx_bytes)
+        cmd = [
+            "ffmpeg", "-y", "-v", "warning",
+            "-ss", str(v_seek), "-i", temp_v_path,
+            "-ss", str(a_seek), "-i", temp_a_path,
+            "-t", str(duration_sec),
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-c:v", "copy",
+            "-bsf:v", "h264_mp4toannexb",
+            "-c:a", "aac",
+            output_path
+        ]
+        execute_ffmpeg(cmd, "Fusion FFmpeg merge failed")
 
-        # 4. Merge with FFmpeg
-        print("\n[4/4] Merging with FFmpeg...")
-        run_sidx_smart_merge(v_temp_path, a_temp_path, output_path, v_sub_start, a_sub_start, start_time_sec, duration_sec)
-
-        elapsed = round(time.time() - t0, 2)
-        saved_pct = round((1 - (sidx_downloaded_size / full_total)) * 100, 1) if full_total > 0 else 0
-
-        print("\n" + "=" * 60)
-        print("✅ SUCCESS! CLIP DOWNLOAD COMPLETE")
-        print("=" * 60)
-        print(f"Output Path:         {os.path.abspath(output_path)}")
-        print(f"Downloaded Size:     {sidx_downloaded_size} bytes ({round(sidx_downloaded_size / (1024*1024), 2)} MB)")
-        print(f"Full Video Payload:  {full_total} bytes ({round(full_total / (1024*1024), 2)} MB)")
-        print(f"Bandwidth Saved:     {saved_pct}%")
-        print(f"Total Time Taken:    {elapsed}s")
-        print("=" * 60)
-
+        total_dl = len(v_bytes) + len(a_bytes)
+        actual_dur = get_file_duration(output_path)
+        dur_diff = actual_dur - duration_sec
+        print(f"   ✅ Fusion Mode Success! Saved to {output_path} ({total_dl} bytes in {round(time.time() - t0, 2)}s)")
+        print(f"      Duration Verification: Target={duration_sec:.2f}s, Actual={actual_dur:.2f}s (Diff={dur_diff:+.2f}s)")
     finally:
-        for p in [v_temp_path, a_temp_path]:
+        for p in [temp_v_path, temp_a_path]:
             if os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
+                os.remove(p)
+
+
+def run_mode_standard(video_id, start_time_sec, end_time_sec, output_path):
+    """Standard MP4 / Progressive Stream Mode."""
+    duration_sec = end_time_sec - start_time_sec
+    video_f, audio_f, standard_f, title = fetch_youtube_streams(video_id)
+
+    target_fmt = standard_f or video_f
+    if not target_fmt:
+        raise RuntimeError("No suitable stream format found for standard mode")
+
+    temp_path = os.path.join(TEST_DIR, f"_temp_{video_id}_standard.mp4")
+
+    try:
+        t0 = time.time()
+        print("   [1/3] Resolving Standard Stream Range...")
+        has_sidx = bool(target_fmt.get("initRange") and target_fmt.get("indexRange"))
+
+        if has_sidx:
+            s_init, s_rstart, s_rend, s_sub_start = get_sidx_byte_range(target_fmt, target_fmt["url"], start_time_sec, end_time_sec)
+            s_bytes = s_init + download_stream_parallel_range(target_fmt["url"], s_rstart, s_rend, "Standard Stream")
+            seek_val = max(0.0, start_time_sec - s_sub_start)
+        else:
+            c_len = int(target_fmt.get("contentLength", 0))
+            if c_len > 0:
+                s_bytes = download_stream_parallel_range(target_fmt["url"], 0, c_len - 1, "Standard Full Stream")
+            else:
+                s_bytes = download_chunk(target_fmt["url"], 0, 10 * 1024 * 1024)
+            seek_val = start_time_sec
+
+        with open(temp_path, "wb") as f:
+            f.write(s_bytes)
+
+        print("   [2/3] Trimming Standard Stream with FFmpeg...")
+        cmd = [
+            "ffmpeg", "-y", "-v", "warning",
+            "-ss", str(seek_val), "-i", temp_path,
+            "-t", str(duration_sec),
+            "-c", "copy",
+            output_path
+        ]
+        execute_ffmpeg(cmd, "Standard stream FFmpeg trim failed")
+
+        actual_dur = get_file_duration(output_path)
+        dur_diff = actual_dur - duration_sec
+        print(f"   ✅ Standard Mode Success! Saved to {output_path} ({len(s_bytes)} bytes in {round(time.time() - t0, 2)}s)")
+        print(f"      Duration Verification: Target={duration_sec:.2f}s, Actual={actual_dur:.2f}s (Diff={dur_diff:+.2f}s)")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def run_all_tests(video_id, start_time, end_time):
+    """Run test suite for all 4 download modes with duration verification."""
+    target_dur = end_time - start_time
+    print("=" * 70)
+    print("🚀 RUNNING FULL SIDX MULTI-MODE TEST SUITE WITH DURATION VERIFICATION")
+    print(f"   Video ID:        {video_id}")
+    print(f"   Time Range:      {start_time}s -> {end_time}s")
+    print(f"   Target Duration: {target_dur:.2f}s")
+    print("=" * 70)
+
+    modes = [
+        ("AUDIO ONLY", "audio", os.path.join(TEST_DIR, "test_out_audio.m4a"), run_mode_audio),
+        ("VIDEO ONLY", "video", os.path.join(TEST_DIR, "test_out_video.mp4"), run_mode_video),
+        ("FUSION (VIDEO+AUDIO)", "fusion", os.path.join(TEST_DIR, "test_out_fusion.mp4"), run_mode_fusion),
+        ("STANDARD MP4", "standard", os.path.join(TEST_DIR, "test_out_standard.mp4"), run_mode_standard),
+    ]
+
+    results = {}
+
+    for name, mode_key, out_file, func in modes:
+        print(f"\n--- [TEST MODE: {name}] ---")
+        try:
+            func(video_id, start_time, end_time, out_file)
+            if os.path.exists(out_file) and os.path.getsize(out_file) > 0:
+                act_dur = get_file_duration(out_file)
+                diff = act_dur - target_dur
+                if abs(diff) <= 1.0:
+                    results[mode_key] = f"PASSED (Duration: {act_dur:.2f}s, Target: {target_dur:.2f}s, Diff: {diff:+.2f}s)"
+                else:
+                    results[mode_key] = f"FAILED (Duration mismatch: Actual {act_dur:.2f}s vs Target {target_dur:.2f}s)"
+            else:
+                results[mode_key] = "FAILED (Output file empty or missing)"
+        except Exception as e:
+            results[mode_key] = f"FAILED ({e})"
+
+    print("\n" + "=" * 70)
+    print("📊 MULTI-MODE TEST SUITE DURATION SUMMARY")
+    print("=" * 70)
+    all_passed = True
+    for name, mode_key, out_file, _ in modes:
+        status = results.get(mode_key, "UNKNOWN")
+        icon = "✅" if "PASSED" in status else "❌"
+        print(f"  {icon} {name:<25}: {status}")
+        if "FAILED" in status:
+            all_passed = False
+        # Clean test output files
+        if os.path.exists(out_file):
+            try:
+                os.remove(out_file)
+            except Exception:
+                pass
+    print("=" * 70)
+
+    if all_passed:
+        print("\n🎉 ALL 4 SIDX DOWNLOAD MODES MATCHED TARGET DURATION NEARLY PERFECTLY!")
+        sys.exit(0)
+    else:
+        print("\n❌ SOME TEST MODES FAILED DURATION VERIFICATION!")
+        sys.exit(1)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Pure SIDX-Based YouTube Video Clip Downloader")
+    parser = argparse.ArgumentParser(description="SIDX Multi-Mode YouTube Downloader & Duration Verifier")
     parser.add_argument("video", nargs="?", default=DEFAULT_VIDEO_ID, help="YouTube Video ID or URL (default: C8QYVwX0M6g)")
     parser.add_argument("--start", "-s", type=parse_time, default=DEFAULT_START_TIME, help="Start time in seconds or HH:MM:SS (default: 17.0)")
     parser.add_argument("--end", "-e", type=parse_time, default=DEFAULT_END_TIME, help="End time in seconds or HH:MM:SS (default: 79.0)")
-    parser.add_argument("--output", "-o", type=str, default=DEFAULT_OUTPUT, help="Output MP4 filename")
+    parser.add_argument("--mode", "-m", choices=["audio", "video", "fusion", "standard", "all"], default="all", help="Download mode (default: all)")
+    parser.add_argument("--output", "-o", type=str, help="Output file path for single mode execution")
 
     args = parser.parse_args()
+    video_id = extract_video_id(args.video)
 
-    download_sidx_clip(
-        video_id_or_url=args.video,
-        start_time_sec=args.start,
-        end_time_sec=args.end,
-        output_path=args.output
-    )
+    if args.mode == "all":
+        run_all_tests(video_id, args.start, args.end)
+    else:
+        out_ext = ".m4a" if args.mode == "audio" else ".mp4"
+        output = args.output or os.path.join(TEST_DIR, f"sidx_{args.mode}_out{out_ext}")
+
+        print("=" * 60)
+        print(f"🚀 RUNNING SIDX DOWNLOADER [MODE: {args.mode.upper()}]")
+        print(f"   Video ID:    {video_id}")
+        print(f"   Time Window: {args.start}s -> {args.end}s (Target Duration: {args.end - args.start:.2f}s)")
+        print(f"   Output File: {output}")
+        print("=" * 60)
+
+        if args.mode == "audio":
+            run_mode_audio(video_id, args.start, args.end, output)
+        elif args.mode == "video":
+            run_mode_video(video_id, args.start, args.end, output)
+        elif args.mode == "fusion":
+            run_mode_fusion(video_id, args.start, args.end, output)
+        elif args.mode == "standard":
+            run_mode_standard(video_id, args.start, args.end, output)
 
 
 if __name__ == "__main__":
     main()
-

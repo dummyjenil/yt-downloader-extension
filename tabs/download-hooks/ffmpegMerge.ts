@@ -1,4 +1,4 @@
-import { getCachedFile } from "../../utils/ffmpeg-helper";
+import { getCachedFile, downloadFFmpeg } from "../../utils/ffmpeg-helper";
 import type { TrimRange } from "../../types/youtube";
 
 export const ffmpegWorkerUrl = new URL(
@@ -38,12 +38,98 @@ export async function runFFmpegMerge(
   trimRange?: TrimRange,
   subtitleBuffers?: { name: string; code: string; data: Uint8Array }[]
 ): Promise<Uint8Array> {
-  // Retrieve cached FFmpeg core Blobs from IndexedDB
-  const coreJSBlob = await getCachedFile("ffmpeg-core.js");
-  const coreWASMBlob = await getCachedFile("ffmpeg-core.wasm");
+  // Node environment fallback for CLI test runner (verify_ts_downloader.ts)
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    try {
+      const req = typeof globalThis !== "undefined" && (globalThis as any).require ? (globalThis as any).require : eval("require");
+      const fs = req("fs");
+      const path = req("path");
+      const { execSync } = req("child_process");
+
+      const tmpDir = path.join(process.cwd(), "test");
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+      const isAudioOnly = ext === "m4a" || ext === "mp3" || ext === "aac" || ext === "wav";
+      const vName = path.join(tmpDir, `_node_tmp_v_${Date.now()}.${ext}`);
+      const outName = path.join(tmpDir, `_node_tmp_out_${Date.now()}.${ext}`);
+      fs.writeFileSync(vName, videoData);
+
+      let aName = "";
+      if (audioData) {
+        const aExt = audioExt || (ext === "webm" ? "webm" : "m4a");
+        aName = path.join(tmpDir, `_node_tmp_a_${Date.now()}.${aExt}`);
+        fs.writeFileSync(aName, audioData);
+      }
+
+      const args: string[] = [];
+      const isTrimming = trimRange && trimRange.enabled;
+      const vSeek = (isTrimming && trimRange.vSeek !== undefined) ? trimRange.vSeek : (isTrimming ? Math.max(0, trimRange.startTimeSec) : 0);
+      const aSeek = (isTrimming && trimRange.aSeek !== undefined) ? trimRange.aSeek : (isTrimming ? Math.max(0, trimRange.startTimeSec) : 0);
+      const durationSec = isTrimming ? Math.max(0.1, trimRange.endTimeSec - trimRange.startTimeSec) : 0;
+
+      if (isTrimming) args.push("-ss", String(vSeek));
+      args.push("-i", vName);
+
+      if (aName) {
+        if (isTrimming) args.push("-ss", String(aSeek));
+        args.push("-i", aName);
+      }
+
+      if (isTrimming) args.push("-t", String(durationSec));
+
+      if (isAudioOnly) {
+        args.push("-map", "0:a:0");
+        if (isTrimming || ext === "webm") {
+          args.push("-c:a", ext === "webm" ? "libopus" : "aac");
+        } else {
+          args.push("-c:a", "copy");
+        }
+      } else {
+        args.push("-map", "0:v:0", "-c:v", "copy");
+        if (ext === "mp4") args.push("-bsf:v", "h264_mp4toannexb");
+
+        if (aName) {
+          args.push("-map", "1:a:0");
+          if (ext === "mp4") args.push("-c:a", "aac");
+          else if (ext === "webm") args.push("-c:a", "libopus");
+          else args.push("-c:a", "copy");
+        } else {
+          args.push("-map", "0:a:0?");
+          if (isTrimming) args.push("-c:a", "aac");
+          else args.push("-c:a", "copy");
+        }
+        if (ext === "mp4") args.push("-movflags", "+faststart");
+      }
+
+      const cmd = `ffmpeg -y -v warning ${args.map(a => `"${a}"`).join(" ")} "${outName}"`;
+      execSync(cmd);
+      const mergedRes = fs.readFileSync(outName);
+
+      if (fs.existsSync(vName)) fs.unlinkSync(vName);
+      if (aName && fs.existsSync(aName)) fs.unlinkSync(aName);
+      if (fs.existsSync(outName)) fs.unlinkSync(outName);
+
+      return new Uint8Array(mergedRes);
+    } catch (nodeErr) {
+      console.warn("Node FFmpeg execution fallback error:", nodeErr);
+      throw nodeErr;
+    }
+  }
+
+  // Retrieve cached FFmpeg core Blobs from IndexedDB in Browser environment
+  let coreJSBlob = await getCachedFile("ffmpeg-core.js");
+  let coreWASMBlob = await getCachedFile("ffmpeg-core.wasm");
+
+  // Auto-download FFmpeg if not cached yet
+  if (!coreJSBlob || !coreWASMBlob) {
+    console.log("FFmpeg core files not cached in IndexedDB. Downloading on-the-fly...");
+    await downloadFFmpeg("0.12.10", () => {});
+    coreJSBlob = await getCachedFile("ffmpeg-core.js");
+    coreWASMBlob = await getCachedFile("ffmpeg-core.wasm");
+  }
 
   if (!coreJSBlob || !coreWASMBlob) {
-    throw new Error("FFmpeg is not installed. Please go to Settings and install it first.");
+    throw new Error("FFmpeg engine is not available. Please check your internet connection.");
   }
 
   // Fetch the bundler's compiled FFmpeg worker file
@@ -77,8 +163,15 @@ export async function runFFmpegMerge(
 
     window.addEventListener("message", handleResponse);
 
-    const videoBuf = videoData.buffer as ArrayBuffer;
-    const audioBuf = audioData ? (audioData.buffer as ArrayBuffer) : null;
+    const videoBuf = (videoData.byteOffset === 0 && videoData.byteLength === videoData.buffer.byteLength)
+      ? (videoData.buffer as ArrayBuffer)
+      : (videoData.buffer.slice(videoData.byteOffset, videoData.byteOffset + videoData.byteLength) as ArrayBuffer);
+
+    const audioBuf = audioData
+      ? ((audioData.byteOffset === 0 && audioData.byteLength === audioData.buffer.byteLength)
+        ? (audioData.buffer as ArrayBuffer)
+        : (audioData.buffer.slice(audioData.byteOffset, audioData.byteOffset + audioData.byteLength) as ArrayBuffer))
+      : null;
 
     const subTransfers: ArrayBuffer[] = [];
     const subPayloads = (subtitleBuffers || []).map((s) => {

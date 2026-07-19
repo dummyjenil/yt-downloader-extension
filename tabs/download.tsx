@@ -16,6 +16,7 @@ function DownloadPageContent() {
     chunkSize,
     concurrency,
     maxConcurrentJobs,
+    saveMode,
     defaultDirName,
     dirPermission,
     historyList,
@@ -66,6 +67,7 @@ function DownloadPageContent() {
             chunkSize={chunkSize}
             concurrency={concurrency}
             maxConcurrentJobs={maxConcurrentJobs}
+            saveMode={saveMode}
             defaultDirName={defaultDirName}
             handleSelectDirectory={handleSelectDirectory}
             handleClearDirectory={handleClearDirectory}

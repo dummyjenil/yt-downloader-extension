@@ -1,5 +1,5 @@
 import type { JobState } from "./types";
-import { setupDestinationStream } from "./streamSetup";
+import { setupDestinationStream, type SaveMode } from "./streamSetup";
 import { processSrtDownload } from "./srtProcessor";
 import { processAdaptiveDownload } from "./adaptiveDownloader";
 import { processSingleStreamDownload } from "./singleStreamDownloader";
@@ -12,14 +12,17 @@ export async function setupAndStartJob(
   chunkSizeRef: React.MutableRefObject<number>,
   concurrencyRef: React.MutableRefObject<number>,
   refreshHistory: () => void,
-  processQueue: () => void
+  processQueue: () => void,
+  saveModeRef?: React.MutableRefObject<SaveMode>
 ): Promise<void> {
   job.status = "downloading";
   setJobList(Array.from(jobsRef.current.values()));
 
+  const currentSaveMode = saveModeRef?.current || "directory";
+
   try {
     if (job.ext === "srt") {
-      await processSrtDownload(job, refreshHistory, processQueue);
+      await processSrtDownload(job, refreshHistory, processQueue, currentSaveMode);
       return;
     }
 
@@ -49,13 +52,14 @@ export async function setupAndStartJob(
       }
     }
 
-    const writableStream = await setupDestinationStream(job, setDirPermission);
+    const writableStream = await setupDestinationStream(job, setDirPermission, currentSaveMode);
     const fetchStreamSize = async (streamUrl: string): Promise<number> => {
-      const headResponse = await fetch(`${streamUrl}&ext_download=true`, { method: "HEAD" }).catch(() => null);
+      const sep = streamUrl.includes("?") ? "&" : "?";
+      const headResponse = await fetch(`${streamUrl}${sep}ext_download=true`, { method: "HEAD" }).catch(() => null);
       const headSize = headResponse?.headers.get("content-length");
       if (headSize) return parseInt(headSize, 10);
 
-      const rangeResponse = await fetch(`${streamUrl}&range=0-0&ext_download=true`).catch(() => null);
+      const rangeResponse = await fetch(`${streamUrl}${sep}range=0-0&ext_download=true`).catch(() => null);
       const rangeHeader = rangeResponse?.headers.get("content-range");
       if (rangeHeader) {
         return parseInt(rangeHeader.split("/")[1], 10);

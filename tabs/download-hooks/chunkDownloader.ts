@@ -1,25 +1,17 @@
 import type { JobState } from "./types";
+import { buildChunkUrl } from "../../utils/sidx";
 
 export async function fetchChunkWithRetry(
   job: JobState,
   chunkIdx: number,
   totalChunks: number,
-  size: number
+  size: number,
+  maxStreamSize?: number
 ): Promise<ArrayBuffer | null> {
+  const limit = maxStreamSize !== undefined ? maxStreamSize : job.totalSize;
   const start = chunkIdx * size;
-  const end = Math.min((chunkIdx + 1) * size, job.totalSize) - 1;
-
-  let chunkUrl = job.url;
-  if (chunkUrl.includes("range=")) {
-    chunkUrl = chunkUrl.replace(/([?&])range=[^&]*/, `$1range=${start}-${end}`);
-  } else {
-    const sep = chunkUrl.includes("?") ? "&" : "?";
-    chunkUrl = `${chunkUrl}${sep}range=${start}-${end}`;
-  }
-  if (!chunkUrl.includes("ext_download=true")) {
-    const sep = chunkUrl.includes("?") ? "&" : "?";
-    chunkUrl = `${chunkUrl}${sep}ext_download=true`;
-  }
+  const end = Math.min((chunkIdx + 1) * size, limit) - 1;
+  const chunkUrl = buildChunkUrl(job.url, start, end);
 
   let attempt = 0;
   const maxAttempts = 5;
@@ -50,18 +42,7 @@ export async function fetchAudioChunkWithRetry(
   if (!job.audioUrl) return null;
   const start = chunkIdx * size;
   const end = Math.min((chunkIdx + 1) * size, job.audioSize || 0) - 1;
-
-  let chunkUrl = job.audioUrl;
-  if (chunkUrl.includes("range=")) {
-    chunkUrl = chunkUrl.replace(/([?&])range=[^&]*/, `$1range=${start}-${end}`);
-  } else {
-    const sep = chunkUrl.includes("?") ? "&" : "?";
-    chunkUrl = `${chunkUrl}${sep}range=${start}-${end}`;
-  }
-  if (!chunkUrl.includes("ext_download=true")) {
-    const sep = chunkUrl.includes("?") ? "&" : "?";
-    chunkUrl = `${chunkUrl}${sep}ext_download=true`;
-  }
+  const chunkUrl = buildChunkUrl(job.audioUrl, start, end);
 
   let attempt = 0;
   const maxAttempts = 5;
@@ -124,18 +105,7 @@ export async function downloadRangeInParallel(
 
         const start = rangeStart + chunkIdx * chunkSize;
         const end = Math.min(rangeStart + (chunkIdx + 1) * chunkSize - 1, rangeEnd);
-
-        let chunkUrl = url;
-        if (chunkUrl.includes("range=")) {
-          chunkUrl = chunkUrl.replace(/([?&])range=[^&]*/, `$1range=${start}-${end}`);
-        } else {
-          const sep = chunkUrl.includes("?") ? "&" : "?";
-          chunkUrl = `${chunkUrl}${sep}range=${start}-${end}`;
-        }
-        if (!chunkUrl.includes("ext_download=true")) {
-          const sep = chunkUrl.includes("?") ? "&" : "?";
-          chunkUrl = `${chunkUrl}${sep}ext_download=true`;
-        }
+        const chunkUrl = buildChunkUrl(url, start, end);
 
         (async () => {
           let attempt = 0;

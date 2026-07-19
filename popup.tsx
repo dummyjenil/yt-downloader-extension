@@ -54,6 +54,8 @@ function PopupContent() {
     setChunkSize,
     concurrency,
     setConcurrency,
+    saveMode,
+    setSaveMode,
     defaultDirName,
     handleSelectDirectory,
     handleClearDirectory
@@ -224,10 +226,12 @@ function PopupContent() {
           defaultDirName={defaultDirName}
           chunkSize={chunkSize}
           concurrency={concurrency}
+          saveMode={saveMode}
           handleSelectDirectory={handleSelectDirectory}
           handleClearDirectory={handleClearDirectory}
           setChunkSize={setChunkSize}
           setConcurrency={setConcurrency}
+          setSaveMode={setSaveMode}
         />
       )}
 

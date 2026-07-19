@@ -10,11 +10,19 @@ export default function SandboxPage() {
       const { videoData, audioData, subtitleBuffers, trimRange, ext, audioExt } = event.data;
       const logs: string[] = [];
 
+      console.log("⚡ [SANDBOX RECEIVED MERGE TASK]", {
+        videoDataSize: videoData ? videoData.byteLength : 0,
+        audioDataSize: audioData ? audioData.byteLength : 0,
+        ext,
+        audioExt,
+        trimRange
+      });
+
       try {
         const ffmpeg = new FFmpeg();
 
         ffmpeg.on("log", ({ message }) => {
-          console.log("Sandbox FFmpeg Log:", message);
+          console.log("⚡ [SANDBOX FFmpeg LOG]", message);
           logs.push(message);
         });
 
@@ -40,6 +48,7 @@ export default function SandboxPage() {
             wasmURL: coreWasmUrl,
             classWorkerURL: workerBlobUrl
           });
+          console.log("⚡ [SANDBOX FFmpeg ENGINE LOADED SUCCESSFULLY]");
         } finally {
           // Restore original Worker constructor
           window.Worker = OriginalWorker;
@@ -83,7 +92,7 @@ export default function SandboxPage() {
         const aSeek = (isTrimming && trimRange.aSeek !== undefined) ? trimRange.aSeek : (isTrimming ? Math.max(0, trimRange.startTimeSec) : 0);
         const durationSec = isTrimming ? Math.max(0.1, trimRange.endTimeSec - trimRange.startTimeSec) : 0;
 
-        // Input 0: Primary video/audio file (with -ss before -i for fast keyframe alignment)
+        // Input 0: Primary video/media file (with -ss before -i for fast keyframe alignment)
         if (isTrimming) {
           ffmpegArgs.push("-ss", String(vSeek));
         }
@@ -107,27 +116,9 @@ export default function SandboxPage() {
           ffmpegArgs.push("-t", String(durationSec));
         }
 
-        // Explicit Stream Mapping
+        // Explicit Stream Mapping & Codec Selection (Exact match with verify_ts_downloader.ts)
         if (isAudioOnly) {
           ffmpegArgs.push("-map", "0:a:0");
-        } else {
-          // Map video from input 0
-          ffmpegArgs.push("-map", "0:v:0");
-          // Map audio from input 1 (if separate audio stream) or input 0 (if embedded)
-          if (audioName) {
-            ffmpegArgs.push("-map", "1:a:0");
-          } else {
-            ffmpegArgs.push("-map", "0:a:0?");
-          }
-          // Map subtitles starting from input 2 (if separate audio was present) or input 1
-          const subInputStartIdx = audioName ? 2 : 1;
-          for (let i = 0; i < subFileNames.length; i++) {
-            ffmpegArgs.push("-map", `${subInputStartIdx + i}:s:0`);
-          }
-        }
-
-        // Codec & Bitstream configuration
-        if (isAudioOnly) {
           if (isTrimming || (ext === "webm" && finalAudioExt !== "webm")) {
             if (ext === "webm") {
               ffmpegArgs.push("-c:a", "libopus");
@@ -141,26 +132,42 @@ export default function SandboxPage() {
           }
         } else {
           // Stream copy video without re-encoding whole 1080p stream
+          ffmpegArgs.push("-map", "0:v:0");
           ffmpegArgs.push("-c:v", "copy");
 
-          if (audioData) {
+          if (audioName) {
+            // Dual-stream fusion mode (Video Input 0 + Audio Input 1)
+            ffmpegArgs.push("-map", "1:a:0");
+
             const isMp4Output = ext === "mp4";
             const isWebmOutput = ext === "webm";
             const isAudioM4a = finalAudioExt === "m4a" || finalAudioExt === "mp4";
             const isAudioWebm = finalAudioExt === "webm";
 
             if (isMp4Output && isAudioWebm) {
-              // WebM/Opus audio converted to AAC for MP4 container compatibility
               ffmpegArgs.push("-c:a", "aac");
             } else if (isWebmOutput && isAudioM4a) {
-              // M4A/AAC audio converted to Opus for WebM container compatibility
               ffmpegArgs.push("-c:a", "libopus");
+            } else if (isTrimming) {
+              // Re-encode audio when trimming dual streams to guarantee 100% audio sync & clean PTS alignment
+              if (isMp4Output) {
+                ffmpegArgs.push("-c:a", "aac");
+              } else if (isWebmOutput) {
+                ffmpegArgs.push("-c:a", "libopus");
+              } else {
+                ffmpegArgs.push("-c:a", "copy");
+              }
             } else {
-              // Stream copy compatible audio formats (MP4+m4a, WebM+webm, MKV) instantly
               ffmpegArgs.push("-c:a", "copy");
             }
           } else {
-            ffmpegArgs.push("-c:a", "copy");
+            // Single video file input (Progressive MP4 or Video-Only Adaptive)
+            ffmpegArgs.push("-map", "0:a:0?");
+            if (isTrimming) {
+              ffmpegArgs.push("-c:a", "aac");
+            } else {
+              ffmpegArgs.push("-c:a", "copy");
+            }
           }
 
           if (ext === "mp4") {
@@ -181,11 +188,12 @@ export default function SandboxPage() {
 
         ffmpegArgs.push(outputName);
 
-        console.log("Executing FFmpeg in Sandbox with args:", ffmpegArgs.join(" "));
+        console.log("⚡ [EXECUTING FFmpeg IN SANDBOX ARGS]", ffmpegArgs.join(" "));
         await ffmpeg.exec(ffmpegArgs);
 
         // Read merged output
         const outputData = await ffmpeg.readFile(outputName);
+        console.log("⚡ [SANDBOX READ OUTPUT DATA SIZE]", outputData ? outputData.byteLength : 0);
 
         // Clean up virtual filesystem
         try {
@@ -204,6 +212,8 @@ export default function SandboxPage() {
           ? (outputData.buffer.slice(outputData.byteOffset, outputData.byteOffset + outputData.byteLength) as ArrayBuffer)
           : (new Uint8Array(outputData as any).buffer as ArrayBuffer);
 
+        console.log("⚡ [SANDBOX POSTING MERGE_SUCCESS BACK TO PARENT]", outputBuf.byteLength);
+
         // Post output back to parent page, using transferables for performance
         window.parent.postMessage(
           { type: "MERGE_SUCCESS", mergedData: outputBuf },
@@ -211,7 +221,7 @@ export default function SandboxPage() {
           [outputBuf]
         );
       } catch (err: any) {
-        console.error("Sandbox FFmpeg execution failed:", err);
+        console.error("⚡ [SANDBOX FFmpeg EXECUTION FAILED]", err);
         const lastLogs = logs.slice(-10).join("\n");
         window.parent.postMessage(
           { 
@@ -229,4 +239,3 @@ export default function SandboxPage() {
 
   return <div style={{ display: "none" }}>FFmpeg Sandbox</div>;
 }
-
