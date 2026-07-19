@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { useTheme } from "../../context/ThemeContext";
+import { themes, type ThemeId } from "../../styles/themeConfig";
 import { isFFmpegInstalled, downloadFFmpeg } from "../../utils/ffmpeg-helper";
 
 interface SettingsTabProps {
@@ -20,28 +22,30 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   handleClearDirectory,
   updateSetting
 }) => {
+  const { theme, themeConfig, setTheme } = useTheme();
+
   const [status, setStatus] = useState<"not_installed" | "downloading" | "installed" | "error">("not_installed");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if FFmpeg is installed
     isFFmpegInstalled().then((installed) => {
       if (installed) {
         setStatus("installed");
         setProgress(100);
       } else {
-        chrome.storage.local.get(["ffmpeg_status", "ffmpeg_progress", "ffmpeg_error"], (res) => {
-          if (res.ffmpeg_status) {
-            setStatus(res.ffmpeg_status as any);
-            setProgress((res.ffmpeg_progress as number) || 0);
-            setError((res.ffmpeg_error as string) || null);
-          }
-        });
+        if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get(["ffmpeg_status", "ffmpeg_progress", "ffmpeg_error"], (res) => {
+            if (res.ffmpeg_status) {
+              setStatus(res.ffmpeg_status as any);
+              setProgress((res.ffmpeg_progress as number) || 0);
+              setError((res.ffmpeg_error as string) || null);
+            }
+          });
+        }
       }
     });
 
-    // Listen to local storage changes to keep progress in sync
     const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
       if (areaName === "local") {
         if (changes.ffmpeg_status) {
@@ -56,251 +60,196 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       }
     };
 
-    chrome.storage.onChanged.addListener(handleStorageChange);
-    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener(handleStorageChange);
+      return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+    }
   }, []);
 
   const handleDownloadTrigger = async () => {
     setStatus("downloading");
     setProgress(0);
     setError(null);
-    chrome.storage.local.set({
-      ffmpeg_status: "downloading",
-      ffmpeg_progress: 0,
-      ffmpeg_error: ""
-    });
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({
+        ffmpeg_status: "downloading",
+        ffmpeg_progress: 0,
+        ffmpeg_error: ""
+      });
+    }
 
     try {
       await downloadFFmpeg("0.12.10", (pct) => {
         setProgress(pct);
-        chrome.storage.local.set({ ffmpeg_progress: pct });
+        if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ ffmpeg_progress: pct });
+        }
       });
       setStatus("installed");
       setProgress(100);
-      chrome.storage.local.set({ ffmpeg_status: "installed", ffmpeg_progress: 100 });
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ ffmpeg_status: "installed", ffmpeg_progress: 100 });
+      }
     } catch (err: any) {
       console.error(err);
       setStatus("error");
       const errMsg = err.message || "Failed to download and store FFmpeg.";
       setError(errMsg);
-      chrome.storage.local.set({
-        ffmpeg_status: "error",
-        ffmpeg_error: errMsg
-      });
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({
+          ffmpeg_status: "error",
+          ffmpeg_error: errMsg
+        });
+      }
     }
   };
 
   return (
-    <div
-      style={{
-        background: "rgba(255, 255, 255, 0.02)",
-        border: "1px solid rgba(255, 255, 255, 0.07)",
-        borderRadius: "24px",
-        padding: "30px",
-        boxShadow: "0 10px 40px rgba(0,0,0,0.3)"
-      }}
-    >
-      <h2 style={{ fontSize: "22px", fontWeight: 700, margin: "0 0 24px 0", color: "#f4f4f5" }}>Settings</h2>
+    <div className={`${themeConfig.card} ${themeConfig.radius} p-8 ${themeConfig.shadow}`}>
+      <h2 className="text-2xl font-extrabold mb-6">Extension Settings</h2>
+
+      {/* Visual Theme Picker */}
+      <div className="mb-7">
+        <label className="block text-sm font-bold mb-2">
+          Visual UI Theme
+        </label>
+        <p className={`text-xs ${themeConfig.mutedText} mb-3 leading-relaxed`}>
+          Customize the aesthetic theme across the extension popup and full dashboard page.
+        </p>
+        <select
+          value={theme}
+          onChange={(e) => setTheme(e.target.value as ThemeId)}
+          className={`${themeConfig.input} ${themeConfig.radius} p-3 text-sm w-full max-w-sm outline-none font-bold cursor-pointer`}
+        >
+          {Object.values(themes).map((t) => (
+            <option key={t.id} value={t.id} className="bg-zinc-900 text-zinc-100 py-1">
+              {t.name} - {t.description}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <hr className={`border-t ${themeConfig.border} my-6`} />
 
       {/* Default Folder Access */}
-      <div style={{ marginBottom: "28px" }}>
-        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#e4e4e7", marginBottom: "8px" }}>
+      <div className="mb-7">
+        <label className="block text-sm font-bold mb-2">
           Default Download Folder
         </label>
-        <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#71717a", lineHeight: 1.5 }}>
+        <p className={`text-xs ${themeConfig.mutedText} mb-3 leading-relaxed`}>
           Choose a default directory handle. When set, YTD will directly download streams into this folder without opening save-file picker popups every time.
         </p>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div className="flex gap-3 items-center">
           <button
             onClick={handleSelectDirectory}
-            style={{
-              background: "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)",
-              border: "none",
-              color: "white",
-              padding: "10px 18px",
-              borderRadius: "12px",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(139, 92, 246, 0.25)"
-            }}
+            className={`${themeConfig.primaryBtn} ${themeConfig.radius} px-5 py-2.5 text-xs font-bold transition-all cursor-pointer`}
           >
             {defaultDirName ? "Change Folder" : "Select Default Folder"}
           </button>
           {defaultDirName && (
             <button
               onClick={handleClearDirectory}
-              style={{
-                background: "rgba(244, 63, 94, 0.1)",
-                border: "1px solid rgba(244, 63, 94, 0.2)",
-                color: "#fda4af",
-                padding: "10px 18px",
-                borderRadius: "12px",
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer"
-              }}
+              className={`${themeConfig.dangerBtn} ${themeConfig.radius} px-4 py-2.5 text-xs font-bold transition-all cursor-pointer`}
             >
               Clear
             </button>
           )}
         </div>
         {defaultDirName && (
-          <div style={{ marginTop: "10px", fontSize: "12px", color: "#c084fc", fontWeight: 500 }}>
-            Active Folder: <span style={{ color: "#e4e4e7", textDecoration: "underline" }}>{defaultDirName}</span>
+          <div className={`mt-3 text-xs ${themeConfig.accentText} font-semibold`}>
+            Active Folder: <span className="underline">{defaultDirName}</span>
           </div>
         )}
       </div>
 
-      <hr style={{ border: "none", borderTop: "1px solid rgba(255, 255, 255, 0.07)", margin: "24px 0" }} />
+      <hr className={`border-t ${themeConfig.border} my-6`} />
 
       {/* Chunk Size */}
-      <div style={{ marginBottom: "24px" }}>
-        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#e4e4e7", marginBottom: "8px" }}>
+      <div className="mb-7">
+        <label className="block text-sm font-bold mb-2">
           Download Chunk Size
         </label>
-        <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#71717a", lineHeight: 1.5 }}>
+        <p className={`text-xs ${themeConfig.mutedText} mb-3 leading-relaxed`}>
           Adjusting this can improve speed depending on your connection. Larger chunk size uses slightly more memory buffering but makes fewer network requests.
         </p>
         <select
           value={chunkSize}
           onChange={(e) => updateSetting("chunkSize", parseInt(e.target.value, 10))}
-          style={{
-            background: "#18181b",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "10px",
-            color: "#f4f4f5",
-            padding: "10px 14px",
-            fontSize: "13px",
-            width: "100%",
-            maxWidth: "240px",
-            outline: "none"
-          }}
+          className={`${themeConfig.input} ${themeConfig.radius} p-3 text-sm w-full max-w-xs outline-none font-bold cursor-pointer`}
         >
-          <option value={1 * 1024 * 1024}>1 MB</option>
-          <option value={2 * 1024 * 1024}>2 MB</option>
-          <option value={5 * 1024 * 1024}>5 MB (Default)</option>
-          <option value={10 * 1024 * 1024}>10 MB</option>
-          <option value={15 * 1024 * 1024}>15 MB</option>
-          <option value={20 * 1024 * 1024}>20 MB</option>
+          <option value={1 * 1024 * 1024} className="bg-zinc-900 text-zinc-100">1 MB</option>
+          <option value={2 * 1024 * 1024} className="bg-zinc-900 text-zinc-100">2 MB</option>
+          <option value={5 * 1024 * 1024} className="bg-zinc-900 text-zinc-100">5 MB (Default)</option>
+          <option value={10 * 1024 * 1024} className="bg-zinc-900 text-zinc-100">10 MB</option>
+          <option value={15 * 1024 * 1024} className="bg-zinc-900 text-zinc-100">15 MB</option>
+          <option value={20 * 1024 * 1024} className="bg-zinc-900 text-zinc-100">20 MB</option>
         </select>
       </div>
 
       {/* Concurrency settings */}
-      {/* Parallel Chunk Fetches */}
-      <div style={{ marginBottom: "24px" }}>
-        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#e4e4e7", marginBottom: "8px" }}>
+      <div className="mb-7">
+        <label className="block text-sm font-bold mb-2">
           Parallel Chunk Fetches
         </label>
-        <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#71717a", lineHeight: 1.5 }}>
+        <p className={`text-xs ${themeConfig.mutedText} mb-3 leading-relaxed`}>
           Number of chunks to fetch simultaneously. Higher values speed up download but can trigger YouTube rate-limiting.
         </p>
         <select
           value={concurrency}
           onChange={(e) => updateSetting("concurrency", parseInt(e.target.value, 10))}
-          style={{
-            background: "#18181b",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "10px",
-            color: "#f4f4f5",
-            padding: "10px 14px",
-            fontSize: "13px",
-            width: "100%",
-            maxWidth: "240px",
-            outline: "none"
-          }}
+          className={`${themeConfig.input} ${themeConfig.radius} p-3 text-sm w-full max-w-xs outline-none font-bold cursor-pointer`}
         >
-          <option value={1}>1 (Sequential)</option>
-          <option value={2}>2 Parallel Chunks</option>
-          <option value={3}>3 Parallel Chunks (Recommended)</option>
-          <option value={5}>5 Parallel Chunks (Fast)</option>
-          <option value={8}>8 Parallel Chunks (Aggressive)</option>
+          <option value={1} className="bg-zinc-900 text-zinc-100">1 (Sequential)</option>
+          <option value={2} className="bg-zinc-900 text-zinc-100">2 Parallel Chunks</option>
+          <option value={3} className="bg-zinc-900 text-zinc-100">3 Parallel Chunks (Recommended)</option>
+          <option value={5} className="bg-zinc-900 text-zinc-100">5 Parallel Chunks (Fast)</option>
+          <option value={8} className="bg-zinc-900 text-zinc-100">8 Parallel Chunks (Aggressive)</option>
         </select>
       </div>
 
-      <hr style={{ border: "none", borderTop: "1px solid rgba(255, 255, 255, 0.07)", margin: "24px 0" }} />
+      <hr className={`border-t ${themeConfig.border} my-6`} />
 
-      {/* Max Concurrent Jobs (Batch size) */}
-      <div style={{ marginBottom: "24px" }}>
-        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#e4e4e7", marginBottom: "8px" }}>
+      {/* Max Concurrent Jobs */}
+      <div className="mb-7">
+        <label className="block text-sm font-bold mb-2">
           Max Parallel Video Downloads (Batch Size)
         </label>
-        <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#71717a", lineHeight: 1.5 }}>
+        <p className={`text-xs ${themeConfig.mutedText} mb-3 leading-relaxed`}>
           Control how many videos in a playlist download in parallel. Other videos will wait in queue automatically.
         </p>
         <select
           value={maxConcurrentJobs}
           onChange={(e) => updateSetting("maxConcurrentJobs", parseInt(e.target.value, 10))}
-          style={{
-            background: "#18181b",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            color: "#f4f4f5",
-            padding: "10px 14px",
-            borderRadius: "10px",
-            fontSize: "13px",
-            width: "100%",
-            maxWidth: "240px",
-            outline: "none",
-            cursor: "pointer"
-          }}
+          className={`${themeConfig.input} ${themeConfig.radius} p-3 text-sm w-full max-w-xs outline-none font-bold cursor-pointer`}
         >
           {[1, 2, 3, 4, 5, 6, 8, 10].map((num) => (
-            <option key={num} value={num}>{num} {num === 1 ? "video" : "videos"}</option>
+            <option key={num} value={num} className="bg-zinc-900 text-zinc-100">{num} {num === 1 ? "video" : "videos"}</option>
           ))}
         </select>
       </div>
 
-      <hr style={{ border: "none", borderTop: "1px solid rgba(255, 255, 255, 0.07)", margin: "24px 0" }} />
+      <hr className={`border-t ${themeConfig.border} my-6`} />
 
       {/* FFmpeg Integration Status */}
-      <div style={{ marginBottom: "12px" }}>
-        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#e4e4e7", marginBottom: "8px" }}>
+      <div className="mb-3">
+        <label className="block text-sm font-bold mb-2">
           FFmpeg Integration (Required for HD Merging)
         </label>
-        <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#71717a", lineHeight: 1.5 }}>
+        <p className={`text-xs ${themeConfig.mutedText} mb-3 leading-relaxed`}>
           FFmpeg is used at runtime to fuse high-definition adaptive video with audio tracks. To avoid bulkier extension packages, it is downloaded and installed locally on demand.
         </p>
 
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "12px",
-            background: "rgba(255, 255, 255, 0.01)",
-            border: "1px solid rgba(255, 255, 255, 0.04)",
-            borderRadius: "14px",
-            padding: "16px",
-            boxSizing: "border-box"
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#a1a1aa" }}>Status:</span>
+        <div className={`flex flex-col gap-3 ${themeConfig.card} ${themeConfig.radius} p-4 border ${themeConfig.border}`}>
+          <div className="flex justify-between items-center">
+            <span className={`text-xs ${themeConfig.mutedText} font-semibold`}>Status:</span>
             <span
-              style={{
-                fontSize: "12px",
-                fontWeight: 600,
-                padding: "4px 10px",
-                borderRadius: "20px",
-                background:
-                  status === "installed"
-                    ? "rgba(16, 185, 129, 0.1)"
-                    : status === "downloading"
-                    ? "rgba(245, 158, 11, 0.1)"
-                    : "rgba(239, 68, 68, 0.1)",
-                color:
-                  status === "installed"
-                    ? "#34d399"
-                    : status === "downloading"
-                    ? "#fbbf24"
-                    : "#f87171",
-                border: `1px solid ${
-                  status === "installed"
-                    ? "rgba(16, 185, 129, 0.2)"
-                    : status === "downloading"
-                    ? "rgba(245, 158, 11, 0.2)"
-                    : "rgba(239, 68, 68, 0.2)"
-                }`
-              }}
+              className={`text-xs font-bold px-3 py-1 ${themeConfig.radius} ${
+                status === "installed"
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  : status === "downloading"
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+              }`}
             >
               {status === "installed"
                 ? "Ready / Installed"
@@ -311,20 +260,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
 
           {error && (
-            <div style={{ fontSize: "11px", color: "#f87171", background: "rgba(239, 68, 68, 0.05)", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(239, 68, 68, 0.1)" }}>
+            <div className="text-xs text-rose-400 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">
               Error: {error}
             </div>
           )}
 
           {status === "downloading" && (
-            <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
+            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
               <div
-                style={{
-                  height: "100%",
-                  background: "linear-gradient(90deg, #a78bfa, #8b5cf6)",
-                  width: `${progress}%`,
-                  transition: "width 0.2s ease"
-                }}
+                className="h-full bg-gradient-to-r from-violet-500 to-purple-500 transition-all duration-200"
+                style={{ width: `${progress}%` }}
               />
             </div>
           )}
@@ -332,19 +277,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <button
             onClick={handleDownloadTrigger}
             disabled={status === "downloading"}
-            style={{
-              alignSelf: "flex-start",
-              background: status === "installed" ? "rgba(255, 255, 255, 0.03)" : "linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)",
-              border: status === "installed" ? "1px solid rgba(255, 255, 255, 0.08)" : "none",
-              color: "white",
-              padding: "8px 16px",
-              borderRadius: "10px",
-              fontSize: "12px",
-              fontWeight: 600,
-              cursor: status === "downloading" ? "not-allowed" : "pointer",
-              transition: "all 0.2s",
-              opacity: status === "downloading" ? 0.5 : 1
-            }}
+            className={`self-start ${
+              status === "installed" ? themeConfig.secondaryBtn : themeConfig.primaryBtn
+            } ${themeConfig.radius} px-4 py-2 text-xs font-bold transition-all cursor-pointer disabled:opacity-50`}
           >
             {status === "installed" ? "Reinstall FFmpeg" : "Download & Install FFmpeg"}
           </button>

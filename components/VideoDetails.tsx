@@ -1,4 +1,5 @@
 import React from "react";
+import { useTheme } from "../context/ThemeContext";
 import type { VideoInfo } from "../types/youtube";
 import { formatDuration } from "../utils/youtube";
 
@@ -7,28 +8,29 @@ interface VideoDetailsProps {
 }
 
 export const VideoDetails: React.FC<VideoDetailsProps> = ({ videoInfo }) => {
+  const { themeConfig } = useTheme();
+
   return (
-    <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-2xl p-3.5 mb-4 shadow-xl">
-      <div className="relative rounded-xl overflow-hidden mb-3 border border-white/10">
-        <img src={videoInfo.thumbnail} alt={videoInfo.title} className="w-full block" />
-        <div className="absolute bottom-2 right-2 bg-black/75 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px] font-semibold text-white tracking-wide">
+    <div className={`${themeConfig.card} ${themeConfig.radius} p-4 mb-5 ${themeConfig.shadow}`}>
+      <div className={`relative ${themeConfig.radius} overflow-hidden mb-3 border ${themeConfig.border}`}>
+        <img src={videoInfo.thumbnail} alt={videoInfo.title} className="w-full block object-cover max-h-[220px]" />
+        <div className="absolute bottom-2.5 right-2.5 bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-md text-xs font-bold text-white tracking-wide border border-white/20">
           {formatDuration(videoInfo.lengthSeconds)}
         </div>
       </div>
-      <h3 className="text-xs font-semibold text-zinc-100 mb-1.5 leading-snug line-clamp-2">
+      <h3 className="text-sm font-bold leading-snug line-clamp-2 mb-2">
         {videoInfo.title}
       </h3>
-      <div className="text-[11px] text-zinc-400 flex items-center gap-1">
+      <div className={`text-xs ${themeConfig.mutedText} flex items-center gap-1.5 font-medium`}>
         <svg
-          width="12"
-          height="12"
+          width="14"
+          height="14"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="opacity-80"
         >
           <circle cx="12" cy="12" r="10"></circle>
           <polygon points="10 8 16 12 10 16 10 8"></polygon>

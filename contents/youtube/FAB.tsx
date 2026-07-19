@@ -1,4 +1,5 @@
 import React from "react";
+import { useTheme } from "../../context/ThemeContext";
 
 interface FABProps {
   onClick: () => void;
@@ -15,32 +16,34 @@ export const FAB: React.FC<FABProps> = ({
   circumference,
   strokeDashoffset
 }) => {
+  const { themeConfig } = useTheme();
+
   return (
-    <div className="fixed bottom-6 right-6 w-[68px] h-[68px] z-[999999] flex items-center justify-center font-sans">
-      <svg className="absolute top-0 left-0 w-[68px] h-[68px] -rotate-90 pointer-events-none">
+    <div className="fixed bottom-8 right-8 w-[84px] h-[84px] z-[999999] flex items-center justify-center font-sans">
+      <svg className="absolute top-0 left-0 w-[84px] h-[84px] -rotate-90 pointer-events-none">
         <circle
-          className="fill-transparent stroke-white/10 stroke-[3.5px]"
-          cx="34"
-          cy="34"
-          r="28"
+          className="fill-transparent stroke-white/15 stroke-[4px]"
+          cx="42"
+          cy="42"
+          r="34"
         />
         <circle
-          className="fill-transparent stroke-violet-500 stroke-[3.5px] stroke-round transition-all duration-150"
-          cx="34"
-          cy="34"
-          r="28"
+          className="fill-transparent stroke-violet-400 stroke-[4px] stroke-round transition-all duration-150"
+          cx="42"
+          cy="42"
+          r="34"
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
         />
       </svg>
       <button
         onClick={onClick}
-        title="Download Options"
-        className="absolute w-[54px] h-[54px] rounded-full bg-gradient-to-r from-rose-500 to-red-600 hover:scale-105 active:scale-95 text-white flex items-center justify-center border-none cursor-pointer shadow-lg shadow-rose-600/40 transition-all p-0"
+        title="Download YouTube Video/Audio"
+        className={`absolute w-[68px] h-[68px] rounded-full ${themeConfig.primaryBtn} hover:scale-105 active:scale-95 text-white flex items-center justify-center cursor-pointer shadow-2xl transition-all p-0`}
       >
         {isCurrentlyDownloading && currentDownloadStatus === "downloading" ? (
           <svg
-            className="w-5 h-5 animate-spin text-white"
+            className="w-7 h-7 animate-spin text-white"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -52,7 +55,7 @@ export const FAB: React.FC<FABProps> = ({
           </svg>
         ) : (
           <svg
-            className="w-5 h-5 text-white"
+            className="w-7 h-7 text-white"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTheme } from "../context/ThemeContext";
 import type { TrimRange } from "../types/youtube";
 
 interface RangeSelectorProps {
@@ -7,6 +8,7 @@ interface RangeSelectorProps {
 }
 
 export const RangeSelector: React.FC<RangeSelectorProps> = ({ totalDurationSec, onChange }) => {
+  const { themeConfig } = useTheme();
   const [enabled, setEnabled] = useState(false);
   const [startStr, setStartStr] = useState("00:00");
   const [endStr, setEndStr] = useState(() => {
@@ -54,19 +56,19 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({ totalDurationSec, 
   }, [enabled, startStr, endStr, totalDurationSec]);
 
   return (
-    <div className="flex flex-col gap-2.5 bg-white/[0.025] border border-white/10 rounded-2xl p-3 mb-3">
+    <div className={`flex flex-col gap-2.5 ${themeConfig.card} ${themeConfig.radius} p-3 mb-3 shrink-0`}>
       <div className="flex justify-between items-center">
-        <span className="text-xs font-semibold text-zinc-200 tracking-wide">
+        <span className="text-xs font-bold tracking-wide">
           Media Range Mode:
         </span>
-        <div className="inline-flex bg-zinc-900 p-0.5 rounded-lg border border-white/10">
+        <div className={`inline-flex ${themeConfig.navContainer}`}>
           <button
             type="button"
             onClick={() => setEnabled(false)}
-            className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all ${
+            className={`px-3 py-1.5 text-xs font-bold ${themeConfig.radius} transition-all cursor-pointer ${
               !enabled
-                ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
+                ? themeConfig.subTabActive
+                : themeConfig.subTabInactive
             }`}
           >
             Full Media
@@ -74,10 +76,10 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({ totalDurationSec, 
           <button
             type="button"
             onClick={() => setEnabled(true)}
-            className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all ${
+            className={`px-3 py-1.5 text-xs font-bold ${themeConfig.radius} transition-all cursor-pointer ${
               enabled
-                ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
+                ? themeConfig.subTabActive
+                : themeConfig.subTabInactive
             }`}
           >
             Trimmed Media
@@ -86,31 +88,31 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({ totalDurationSec, 
       </div>
 
       {enabled && (
-        <div className="flex flex-col gap-2 pt-2 border-t border-dashed border-white/10">
-          <div className="flex gap-2.5 items-center">
+        <div className={`flex flex-col gap-2.5 pt-3 border-t border-dashed ${themeConfig.border}`}>
+          <div className="flex gap-3 items-center">
             <div className="flex-1 flex flex-col gap-1">
-              <span className="text-[10px] text-zinc-400 font-medium">Start Time (mm:ss)</span>
+              <span className={`text-xs ${themeConfig.mutedText} font-semibold`}>Start Time (mm:ss)</span>
               <input
                 type="text"
                 value={startStr}
                 onChange={(e) => setStartStr(e.target.value)}
                 placeholder="00:00"
-                className="bg-zinc-950 border border-white/15 rounded-lg text-zinc-100 px-2 py-1 text-xs font-mono text-center outline-none focus:border-violet-500/50"
+                className={`${themeConfig.input} ${themeConfig.radius} px-3 py-2 text-xs font-mono text-center outline-none`}
               />
             </div>
-            <span className="text-sm text-zinc-500 mt-4">→</span>
+            <span className={`text-base ${themeConfig.mutedText} mt-5 font-bold`}>→</span>
             <div className="flex-1 flex flex-col gap-1">
-              <span className="text-[10px] text-zinc-400 font-medium">End Time (mm:ss)</span>
+              <span className={`text-xs ${themeConfig.mutedText} font-semibold`}>End Time (mm:ss)</span>
               <input
                 type="text"
                 value={endStr}
                 onChange={(e) => setEndStr(e.target.value)}
                 placeholder="01:30"
-                className="bg-zinc-950 border border-white/15 rounded-lg text-zinc-100 px-2 py-1 text-xs font-mono text-center outline-none focus:border-violet-500/50"
+                className={`${themeConfig.input} ${themeConfig.radius} px-3 py-2 text-xs font-mono text-center outline-none`}
               />
             </div>
           </div>
-          <div className="flex justify-between text-[10px] text-purple-300 font-medium">
+          <div className={`flex justify-between text-xs ${themeConfig.accentText} font-bold`}>
             <span>✂️ Trim Active</span>
             <span>Duration: {formatSecToTime(trimmedDuration)}</span>
           </div>

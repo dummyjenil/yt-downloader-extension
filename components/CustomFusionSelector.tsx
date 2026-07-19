@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTheme } from "../context/ThemeContext";
 import type { VideoInfo, StreamFormat, CaptionTrack, TrimRange } from "../types/youtube";
 import { formatBytes } from "../utils/youtube";
 
@@ -20,6 +21,8 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
   trimRange,
   handleDownload
 }) => {
+  const { themeConfig } = useTheme();
+
   const videoStreams = videoInfo.adaptiveFormats
     .filter((f) => f.mimeType.startsWith("video/"))
     .sort((a, b) => {
@@ -43,13 +46,12 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
 
   if (!selectedVideo || !selectedAudio) {
     return (
-      <div className="p-4 text-center text-zinc-500 text-xs bg-white/[0.02] border border-white/5 rounded-xl">
+      <div className={`p-4 text-center text-xs ${themeConfig.card} ${themeConfig.radius}`}>
         No adaptive formats available for custom fusion.
       </div>
     );
   }
 
-  // Calculate container details & trimmed size ratio
   const videoMime = selectedVideo.mimeType.toLowerCase();
   const audioMime = selectedAudio.mimeType.toLowerCase();
 
@@ -98,28 +100,27 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-3 bg-gradient-to-b from-white/[0.04] to-white/[0.01] border border-white/10 rounded-2xl p-3.5 shadow-xl my-2">
-      {/* Header Badge */}
-      <div className="flex items-center justify-between pb-2 border-b border-white/10">
-        <span className="text-xs font-bold bg-gradient-to-r from-violet-300 via-purple-300 to-rose-300 bg-clip-text text-transparent">
+    <div className={`flex flex-col gap-4 ${themeConfig.card} ${themeConfig.radius} p-4 shadow-xl my-3`}>
+      <div className={`flex items-center justify-between pb-3 border-b ${themeConfig.border}`}>
+        <span className={`text-sm font-extrabold ${themeConfig.accentText}`}>
           Custom Multi-Stream Fusion
         </span>
-        <span className="text-[9px] font-semibold bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full border border-violet-500/30 uppercase tracking-wider">
+        <span className={`${themeConfig.badge} uppercase tracking-wider font-bold`}>
           FFmpeg Engine
         </span>
       </div>
 
-      {/* Video Quality Select */}
-      <div className="flex flex-col gap-1">
-        <label className="text-[10px] font-medium text-zinc-400 flex justify-between">
+      {/* Video Track Select */}
+      <div className="flex flex-col gap-1.5">
+        <label className={`text-xs font-semibold ${themeConfig.mutedText} flex justify-between`}>
           <span>Video Track</span>
-          <span className="text-zinc-500 font-mono">{getCodecLabel(selectedVideo.mimeType)}</span>
+          <span className="font-mono">{getCodecLabel(selectedVideo.mimeType)}</span>
         </label>
         <div className="relative">
           <select
             value={selectedVideoIdx}
             onChange={(e) => setSelectedVideoIdx(parseInt(e.target.value, 10))}
-            className="w-full appearance-none bg-zinc-900 hover:bg-zinc-850 border border-white/10 hover:border-violet-500/40 rounded-xl text-zinc-100 pl-3 pr-8 py-2 text-xs outline-none focus:ring-2 focus:ring-violet-500/30 transition-all cursor-pointer font-sans truncate"
+            className={`w-full appearance-none ${themeConfig.input} ${themeConfig.radius} pl-3 pr-9 py-2.5 text-xs outline-none cursor-pointer font-sans truncate`}
           >
             {videoStreams.map((stream, idx) => {
               const size = formatBytes(stream.contentLength);
@@ -131,25 +132,25 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
               );
             })}
           </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-400">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 opacity-60">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="m6 9 6 6 6-6"/>
             </svg>
           </div>
         </div>
       </div>
 
-      {/* Audio Quality Select */}
-      <div className="flex flex-col gap-1">
-        <label className="text-[10px] font-medium text-zinc-400 flex justify-between">
+      {/* Audio Track Select */}
+      <div className="flex flex-col gap-1.5">
+        <label className={`text-xs font-semibold ${themeConfig.mutedText} flex justify-between`}>
           <span>Audio Track</span>
-          <span className="text-zinc-500">{audioStreams.length} Available</span>
+          <span>{audioStreams.length} Available</span>
         </label>
         <div className="relative">
           <select
             value={selectedAudioIdx}
             onChange={(e) => setSelectedAudioIdx(parseInt(e.target.value, 10))}
-            className="w-full appearance-none bg-zinc-900 hover:bg-zinc-850 border border-white/10 hover:border-violet-500/40 rounded-xl text-zinc-100 pl-3 pr-8 py-2 text-xs outline-none focus:ring-2 focus:ring-violet-500/30 transition-all cursor-pointer font-sans truncate"
+            className={`w-full appearance-none ${themeConfig.input} ${themeConfig.radius} pl-3 pr-9 py-2.5 text-xs outline-none cursor-pointer font-sans truncate`}
           >
             {audioStreams.map((stream, idx) => {
               const size = formatBytes(stream.contentLength);
@@ -163,42 +164,42 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
               );
             })}
           </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-400">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 opacity-60">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="m6 9 6 6 6-6"/>
             </svg>
           </div>
         </div>
       </div>
 
-      {/* Multi-Select Subtitles */}
+      {/* Subtitles Multi-Select */}
       {captionTracks.length > 0 && (
-        <div className="flex flex-col gap-1.5 pt-1">
-          <div className="flex justify-between items-center text-[10px]">
-            <span className="font-medium text-zinc-400">Subtitles (Multi-Select):</span>
-            <span className="text-violet-300 font-semibold">{selectedSubtitleCodes.length} selected</span>
+        <div className="flex flex-col gap-2 pt-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className={`font-semibold ${themeConfig.mutedText}`}>Subtitles (Multi-Select):</span>
+            <span className={`font-bold ${themeConfig.accentText}`}>{selectedSubtitleCodes.length} selected</span>
           </div>
 
-          <div className="flex flex-col gap-1 max-h-24 overflow-y-auto bg-zinc-950/80 border border-white/10 rounded-xl p-2 no-scrollbar">
+          <div className={`flex flex-col gap-1 max-h-28 overflow-y-auto ${themeConfig.input} ${themeConfig.radius} p-2 no-scrollbar`}>
             {captionTracks.map((track) => {
               const isChecked = selectedSubtitleCodes.includes(track.code);
               return (
                 <label
                   key={track.code}
-                  className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs cursor-pointer select-none transition-colors ${
-                    isChecked ? "bg-violet-500/15 text-zinc-100 font-medium border border-violet-500/30" : "text-zinc-400 hover:bg-white/5"
+                  className={`flex items-center gap-2 px-2.5 py-1.5 ${themeConfig.radius} text-xs cursor-pointer select-none transition-colors ${
+                    isChecked ? `${themeConfig.badge} font-bold` : `${themeConfig.mutedText} hover:bg-white/5`
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={isChecked}
                     onChange={() => toggleSubtitle(track.code)}
-                    className="accent-violet-500 rounded cursor-pointer"
+                    className="accent-violet-500 rounded cursor-pointer w-4 h-4"
                   />
-                  <span className="truncate flex-1">
+                  <span className="truncate flex-1 font-medium">
                     {track.name}
                   </span>
-                  <span className="text-[9px] text-zinc-500 uppercase font-mono">[{track.code}]</span>
+                  <span className="text-[10px] uppercase font-mono">[{track.code}]</span>
                 </label>
               );
             })}
@@ -206,22 +207,22 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
         </div>
       )}
 
-      {/* Mismatched Container Hint */}
+      {/* Format Mismatch Hint */}
       {!containersMatch && (
-        <div className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2 leading-relaxed">
+        <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 leading-relaxed">
           ⚠️ <strong>Format Mismatch:</strong> {getFormatLabel(selectedVideo.mimeType)} video + {getFormatLabel(selectedAudio.mimeType)} audio. Merging matching formats is faster.
         </div>
       )}
 
       {/* Output Specs & Download Action */}
-      <div className="bg-zinc-950/60 border border-white/5 rounded-xl p-2.5 flex items-center justify-between">
+      <div className={`border ${themeConfig.border} ${themeConfig.radius} p-3 flex items-center justify-between`}>
         <div className="flex flex-col">
-          <span className="text-[9px] text-zinc-500 font-medium">Est. File Size</span>
-          <span className="text-xs font-bold text-violet-300">{formatBytes(totalSize)}</span>
+          <span className={`text-[10px] ${themeConfig.mutedText} font-medium`}>Est. File Size</span>
+          <span className={`text-sm font-bold ${themeConfig.accentText}`}>{formatBytes(totalSize)}</span>
         </div>
         <div className="flex flex-col items-end">
-          <span className="text-[9px] text-zinc-500 font-medium">Container Output</span>
-          <span className="text-xs font-medium text-zinc-200">
+          <span className={`text-[10px] ${themeConfig.mutedText} font-medium`}>Container Output</span>
+          <span className="text-xs font-bold">
             {isVideoWebm ? "WebM Video" : "MP4 Video"}
           </span>
         </div>
@@ -230,22 +231,18 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
       <button
         onClick={triggerDownload}
         disabled={isDownloading}
-        className={`w-full py-2.5 px-3 rounded-xl text-xs font-semibold transition-all flex justify-center items-center gap-2 ${
-          isDownloading
-            ? "bg-white/[0.03] border border-white/10 text-zinc-400 cursor-not-allowed"
-            : "bg-gradient-to-r from-rose-500 via-purple-600 to-violet-600 hover:from-rose-400 hover:to-violet-500 text-white shadow-lg shadow-purple-900/30 active:scale-95 cursor-pointer"
-        }`}
+        className={`w-full py-3 px-4 ${themeConfig.radius} ${themeConfig.primaryBtn} text-xs font-bold transition-all flex justify-center items-center gap-2 cursor-pointer disabled:opacity-50`}
       >
         {isDownloading ? (
           <>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-spin text-purple-400">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-spin">
               <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
             </svg>
             Downloading & Merging...
           </>
         ) : (
           <>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M19 12l-7 7-7-7" />
             </svg>
             Fuse & Download

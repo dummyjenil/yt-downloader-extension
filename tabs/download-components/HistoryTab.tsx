@@ -1,4 +1,5 @@
 import React from "react";
+import { useTheme } from "../../context/ThemeContext";
 import { formatBytes } from "../../utils/youtube";
 
 interface HistoryTabProps {
@@ -7,24 +8,16 @@ interface HistoryTabProps {
 }
 
 export const HistoryTab: React.FC<HistoryTabProps> = ({ historyList, clearHistory }) => {
+  const { themeConfig } = useTheme();
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ fontSize: "24px", fontWeight: 700, margin: 0 }}>Download History</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-extrabold m-0">Download History</h2>
         {historyList.length > 0 && (
           <button
             onClick={clearHistory}
-            style={{
-              background: "transparent",
-              border: "1px solid rgba(244, 63, 94, 0.3)",
-              color: "#f43f5e",
-              padding: "6px 14px",
-              borderRadius: "10px",
-              fontSize: "12px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
+            className={`${themeConfig.dangerBtn} ${themeConfig.radius} px-4 py-2 text-xs font-bold transition-all cursor-pointer`}
           >
             Clear History
           </button>
@@ -32,68 +25,33 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ historyList, clearHistor
       </div>
 
       {historyList.length === 0 ? (
-        <div
-          style={{
-            textAlign: "center",
-            padding: "60px 20px",
-            background: "rgba(255, 255, 255, 0.02)",
-            border: "1px dashed rgba(255, 255, 255, 0.08)",
-            borderRadius: "24px",
-            color: "#71717a"
-          }}
-        >
-          <p style={{ margin: 0, fontSize: "14px" }}>No download history recorded</p>
+        <div className={`text-center py-16 px-6 ${themeConfig.card} ${themeConfig.radius} border-dashed ${themeConfig.mutedText}`}>
+          <p className="m-0 text-sm font-semibold">No download history recorded</p>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div className="flex flex-col gap-3">
           {historyList.map((item, index) => (
             <div
               key={index}
-              style={{
-                background: "rgba(255, 255, 255, 0.015)",
-                border: "1px solid rgba(255, 255, 255, 0.05)",
-                borderRadius: "16px",
-                padding: "16px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}
+              className={`${themeConfig.card} ${themeConfig.radius} p-4 flex justify-between items-center shadow-sm`}
             >
               <div>
-                <h5 style={{ margin: 0, fontSize: "14px", fontWeight: 600, color: "#e4e4e7" }}>
+                <h5 className="m-0 text-sm font-bold">
                   {item.title}.{item.ext}
                 </h5>
-                <span style={{ fontSize: "11px", color: "#71717a", marginTop: "4px", display: "inline-block" }}>
+                <span className={`text-xs ${themeConfig.mutedText} mt-1 inline-block font-medium`}>
                   {formatBytes(item.total)} • {new Date(item.timestamp).toLocaleString()}
                 </span>
               </div>
 
               <div>
                 {item.status === "complete" ? (
-                  <span
-                    style={{
-                      background: "rgba(16, 185, 129, 0.1)",
-                      color: "#10b981",
-                      padding: "4px 10px",
-                      borderRadius: "12px",
-                      fontSize: "10px",
-                      fontWeight: 600,
-                      border: "1px solid rgba(16, 185, 129, 0.15)"
-                    }}
-                  >
+                  <span className={`bg-emerald-500/20 text-emerald-300 ${themeConfig.radius} px-3 py-1 text-xs font-bold border border-emerald-500/30`}>
                     Success
                   </span>
                 ) : (
                   <span
-                    style={{
-                      background: "rgba(244, 63, 94, 0.1)",
-                      color: "#f43f5e",
-                      padding: "4px 10px",
-                      borderRadius: "12px",
-                      fontSize: "10px",
-                      fontWeight: 600,
-                      border: "1px solid rgba(244, 63, 94, 0.15)"
-                    }}
+                    className={`bg-rose-500/20 text-rose-300 ${themeConfig.radius} px-3 py-1 text-xs font-bold border border-rose-500/30`}
                     title={item.error}
                   >
                     Failed

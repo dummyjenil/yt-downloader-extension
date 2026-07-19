@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { useDownloadManager } from "./download-hooks/useDownloadManager";
 import { Header } from "./download-components/Header";
 import { ActiveDownloadsTab } from "./download-components/ActiveDownloadsTab";
@@ -6,9 +7,10 @@ import { SettingsTab } from "./download-components/SettingsTab";
 import { HistoryTab } from "./download-components/HistoryTab";
 import "../styles/globals.css";
 
-export default function DownloadPage() {
+function DownloadPageContent() {
   const [activeTab, setActiveTab] = useState<"downloads" | "settings" | "history">("downloads");
-  
+  const { themeConfig } = useTheme();
+
   const {
     jobList,
     chunkSize,
@@ -30,7 +32,7 @@ export default function DownloadPage() {
   } = useDownloadManager();
 
   return (
-    <div className="flex flex-col min-h-screen font-sans bg-zinc-950 text-zinc-100 m-0 p-0">
+    <div className={`flex flex-col min-h-screen font-sans ${themeConfig.container} transition-colors duration-200 m-0 p-0`}>
       {/* Hidden FFmpeg Sandbox Iframe */}
       <iframe
         id="ffmpeg-sandbox"
@@ -42,7 +44,7 @@ export default function DownloadPage() {
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-4xl w-full my-10 mx-auto px-5 box-border">
+      <main className="flex-1 max-w-5xl w-full my-10 mx-auto px-6 box-border">
         {activeTab === "downloads" && (
           <ActiveDownloadsTab
             jobList={jobList}
@@ -79,5 +81,13 @@ export default function DownloadPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function DownloadPage() {
+  return (
+    <ThemeProvider>
+      <DownloadPageContent />
+    </ThemeProvider>
   );
 }

@@ -1,235 +1,79 @@
-import { useEffect, useState } from "react";
-import React from "react";
-
-import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "./types/youtube";
-import { extractVideoId, formatBytes } from "./utils/youtube";
-import { getDirectoryHandle, storeDirectoryHandle, clearDirectoryHandle } from "./utils/storage";
+import React, { useEffect, useState } from "react";
 import "./styles/globals.css";
 
-// Components
+import { ThemeProvider, useTheme } from "./context/ThemeContext";
+import { useVideoInfo } from "./hooks/useVideoInfo";
+import { useDownloads } from "./hooks/useDownloads";
+import { useSettings } from "./hooks/useSettings";
+
+// UI Components
 import { Header } from "./components/Header";
 import { UrlForm } from "./components/UrlForm";
 import { VideoDetails } from "./components/VideoDetails";
 import { StreamTabs } from "./components/StreamTabs";
 import { StreamRow } from "./components/StreamRow";
-import { Placeholder } from "./components/Placeholder";
 import { CustomFusionSelector } from "./components/CustomFusionSelector";
+import { RangeSelector } from "./components/RangeSelector";
+import { Placeholder } from "./components/Placeholder";
 
-// Popup Sub-Tabs
+// Sub Tabs
 import { PopupDashboardTab } from "./components/popup/PopupDashboardTab";
 import { PopupSettingsTab } from "./components/popup/PopupSettingsTab";
 import { PopupHistoryTab } from "./components/popup/PopupHistoryTab";
 
-function IndexPopup() {
-  const [urlInput, setUrlInput] = useState("");
-  const [videoId, setVideoId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<"video" | "audio" | "adaptive" | "fusion" | "subtitle">("video");
-  const [trimRange, setTrimRange] = useState<TrimRange | null>(null);
+function PopupContent() {
+  const { themeConfig } = useTheme();
 
-  // Navigation tabs for popup
+  // Navigation tab for popup
   const [navTab, setNavTab] = useState<"streams" | "dashboard" | "settings" | "history">("streams");
 
-  // Downloads state registry synced from background
-  const [downloads, setDownloads] = useState<any[]>([]);
-  const [historyList, setHistoryList] = useState<any[]>([]);
+  // Custom Hooks encapsulating business & state logic strictly
+  const {
+    urlInput,
+    setUrlInput,
+    loading,
+    error,
+    videoInfo,
+    activeTab,
+    setActiveTab,
+    trimRange,
+    setTrimRange,
+    handleManualSubmit
+  } = useVideoInfo();
 
-  // Local Settings States
-  const [chunkSize, setChunkSize] = useState<number>(5 * 1024 * 1024);
-  const [concurrency, setConcurrency] = useState<number>(3);
-  const [defaultDirName, setDefaultDirName] = useState<string | null>(null);
+  const {
+    downloads,
+    activeDownloads,
+    historyList,
+    handleDownload,
+    clearHistory
+  } = useDownloads();
 
-  // Load Outfit Google Font dynamically
+  const {
+    chunkSize,
+    setChunkSize,
+    concurrency,
+    setConcurrency,
+    defaultDirName,
+    handleSelectDirectory,
+    handleClearDirectory
+  } = useSettings();
+
+  // Load Outfit Google Font
   useEffect(() => {
     const link = document.createElement("link");
-    link.href = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap";
+    link.href = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
   }, []);
 
-  // Auto detect YouTube video page from current active browser tab
-  useEffect(() => {
-    if (typeof chrome !== "undefined" && chrome.tabs) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTab = tabs[0];
-        if (activeTab && activeTab.url) {
-          const id = extractVideoId(activeTab.url);
-          if (id) {
-            setVideoId(id);
-            fetchInfo(id);
-          }
-        }
-      });
-    }
-  }, []);
-
-  // Sync active downloads and local storage settings
-  useEffect(() => {
-    if (typeof chrome !== "undefined" && chrome.runtime) {
-      chrome.storage.local.get(["chunkSize", "concurrency", "downloadHistory"], (res) => {
-        if (res.chunkSize) setChunkSize(res.chunkSize as number);
-        if (res.concurrency) setConcurrency(res.concurrency as number);
-        if (res.downloadHistory) setHistoryList(res.downloadHistory as any[]);
-      });
-
-      getDirectoryHandle().then((handle) => {
-        if (handle) setDefaultDirName(handle.name);
-      }).catch(console.error);
-
-      chrome.runtime.sendMessage({ type: "GET_ALL_DOWNLOADS" }, (response) => {
-        if (response && response.downloads) {
-          setDownloads(response.downloads);
-        }
-      });
-
-      const listener = (message: any) => {
-        if (message.type === "DOWNLOADS_UPDATED") {
-          setDownloads(message.downloads);
-        }
-      };
-
-      chrome.runtime.onMessage.addListener(listener);
-      return () => chrome.runtime.onMessage.removeListener(listener);
-    }
-  }, []);
-
-  const fetchInfo = (id: string) => {
-    setLoading(true);
-    setError(null);
-    setVideoInfo(null);
-
-    chrome.runtime.sendMessage(
-      { type: "GET_VIDEO_INFO", videoId: id },
-      (response) => {
-        setLoading(false);
-        if (chrome.runtime.lastError) {
-          setError(chrome.runtime.lastError.message || "Failed to communicate with service worker.");
-        } else if (response && response.success) {
-          setVideoInfo(response.info);
-          setNavTab("streams");
-        } else {
-          setError(response?.error || "Unable to extract stream URLs for this video.");
-        }
-      }
-    );
-  };
-
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const id = extractVideoId(urlInput);
-    if (id) {
-      setVideoId(id);
-      fetchInfo(id);
-    } else {
-      setError("Invalid YouTube URL. Please enter a valid watch or share link.");
-    }
-  };
-
-  const handleDownload = (
-    stream: StreamFormat,
-    category: "video" | "audio" | "adaptive" | "fusion" | "subtitle",
-    customAudioStream?: StreamFormat,
-    selectedSubtitles?: CaptionTrack[]
-  ) => {
-    if (!videoInfo) return;
-
-    let ext = "mp4";
-    let audioUrl: string | undefined = undefined;
-    let audioSize: number | undefined = undefined;
-    let audioExt: string | undefined = undefined;
-
-    if (category === "subtitle") {
-      ext = "srt";
-    } else if (category === "audio") {
-      ext = stream.mimeType.includes("webm") ? "webm" : "m4a";
-    } else if (category === "fusion" && customAudioStream) {
-      audioUrl = customAudioStream.url;
-      audioSize = parseInt(customAudioStream.contentLength || "0", 10);
-      audioExt = customAudioStream.mimeType.includes("webm") ? "webm" : "m4a";
-      ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
-    } else if (category === "adaptive") {
-      ext = stream.mimeType.includes("webm") ? "webm" : "mp4";
-    } else if (stream.mimeType.includes("webm")) {
-      ext = "webm";
-    }
-
-    const totalSec = parseInt(videoInfo.lengthSeconds || "0", 10);
-    const isTrimmed = trimRange && trimRange.enabled && totalSec > 0;
-    const trimmedRatio = isTrimmed
-      ? Math.max(0.005, Math.min(1.0, (trimRange.endTimeSec - trimRange.startTimeSec) / totalSec))
-      : 1.0;
-
-    let scaledContentLength = stream.contentLength;
-    if (stream.contentLength && isTrimmed) {
-      scaledContentLength = String(Math.round(parseInt(stream.contentLength, 10) * trimmedRatio));
-    }
-
-    if (audioSize && isTrimmed) {
-      audioSize = Math.round(audioSize * trimmedRatio);
-    }
-
-    const trimSuffix = isTrimmed ? `_trimmed_${trimRange.startTimeSec}s-${trimRange.endTimeSec}s` : "";
-    const suffix = stream.qualityLabel ? `_${stream.qualityLabel}${trimSuffix}` : trimSuffix;
-    const cleanTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, "_");
-    const filename = `${cleanTitle}${suffix}`;
-
-    chrome.runtime.sendMessage({
-      type: "ADD_DOWNLOAD_JOB",
-      url: stream.url,
-      title: filename,
-      ext: ext,
-      contentLength: scaledContentLength || "",
-      audioUrl: audioUrl,
-      audioSize: audioSize ? String(audioSize) : "",
-      audioExt: audioExt || "",
-      initRange: stream.initRange,
-      indexRange: stream.indexRange,
-      audioInitRange: customAudioStream?.initRange,
-      audioIndexRange: customAudioStream?.indexRange,
-      trimRange: trimRange && trimRange.enabled ? trimRange : undefined,
-      selectedSubtitles: selectedSubtitles
-    });
-
-    setNavTab("dashboard");
-  };
-
-  const handleSelectDirectory = async () => {
-    try {
-      if (!(window as any).showDirectoryPicker) {
-        alert("Your browser does not support directory picking. Please use Google Chrome.");
-        return;
-      }
-      const handle = await (window as any).showDirectoryPicker({ mode: "readwrite" });
-      await storeDirectoryHandle(handle);
-      setDefaultDirName(handle.name);
-    } catch (err: any) {
-      console.error(err);
-      alert("Failed to select directory: " + err.message);
-    }
-  };
-
-  const handleClearDirectory = async () => {
-    await clearDirectoryHandle();
-    setDefaultDirName(null);
-  };
-
-  const clearHistory = () => {
-    chrome.storage.local.set({ downloadHistory: [] }, () => {
-      setHistoryList([]);
-    });
-  };
-
-  const activeDownloads = downloads.filter(d => d.status === "downloading" || d.status === "paused");
-
   return (
-    <div className="w-[380px] min-h-[480px] max-h-[600px] bg-zinc-950 text-zinc-100 font-sans p-5 flex flex-col overflow-y-auto no-scrollbar box-border">
-      {/* Header with App Logo and Status Badge */}
+    <div className={`w-[500px] min-h-[580px] max-h-[660px] ${themeConfig.container} font-sans p-6 flex flex-col overflow-y-auto no-scrollbar box-border transition-colors duration-200`}>
+      {/* App Header */}
       <Header />
 
-      {/* Sub Navigation Tabs */}
-      <div className="flex gap-1 bg-white/[0.02] p-[3px] rounded-xl border border-white/10 mb-4">
+      {/* Primary Navigation Bar */}
+      <div className={`flex gap-1.5 ${themeConfig.navContainer} mb-5`}>
         {[
           { id: "streams", label: "Extractor" },
           { id: "dashboard", label: `Downloads ${activeDownloads.length > 0 ? `(${activeDownloads.length})` : ""}` },
@@ -239,18 +83,17 @@ function IndexPopup() {
           <button
             key={tab.id}
             onClick={() => setNavTab(tab.id as any)}
-            className={`flex-1 py-1 text.5 font-semibold rounded-lg text-[11px] transition-all cursor-pointer ${
-              navTab === tab.id
-                ? "bg-white/10 text-violet-300 border border-violet-500/30 shadow-sm"
-                : "text-zinc-400 border border-transparent hover:text-zinc-200"
-            }`}
+            className={`flex-1 py-2 text-xs font-bold ${themeConfig.radius} transition-all cursor-pointer ${navTab === tab.id
+                ? themeConfig.navTabActive
+                : themeConfig.navTabInactive
+              }`}
           >
             {tab.label}
           </button>
         ))}
       </div>
 
-      {/* RENDER VIEWS */}
+      {/* RENDER TAB VIEWS */}
       {navTab === "streams" && (
         <>
           <UrlForm
@@ -261,51 +104,61 @@ function IndexPopup() {
           />
 
           {loading && (
-            <div className="flex flex-col items-center justify-center py-10">
+            <div className="flex flex-col items-center justify-center py-12">
               <svg
-                width="22"
-                height="22"
+                width="28"
+                height="28"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2.5"
-                className="animate-spin text-violet-400 mb-3"
+                className={`animate-spin ${themeConfig.accentText} mb-3`}
               >
                 <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
               </svg>
-              <span className="text-[11px] text-zinc-400">Extracting media streams...</span>
+              <span className={`text-xs ${themeConfig.mutedText} font-semibold`}>Extracting media streams...</span>
             </div>
           )}
 
           {error && (
-            <div className="text-xs text-rose-400 leading-relaxed p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl mt-2">
+            <div className="text-xs text-rose-400 leading-relaxed p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl mb-4 font-semibold">
               {error}
             </div>
           )}
 
-          {videoInfo && <VideoDetails videoInfo={videoInfo} />}
-
           {videoInfo && (
             <>
+              <VideoDetails videoInfo={videoInfo} />
+
+              <RangeSelector
+                totalDurationSec={parseInt(videoInfo.lengthSeconds || "0", 10)}
+                onChange={(range) => setTrimRange(range)}
+              />
+
               <StreamTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
               {activeTab === "fusion" && (
                 <CustomFusionSelector
                   videoInfo={videoInfo}
                   downloads={downloads}
-                  handleDownload={handleDownload as any}
+                  trimRange={trimRange || undefined}
+                  handleDownload={(vStream, cat, aStream, subs) => {
+                    handleDownload(videoInfo, vStream, cat, trimRange, aStream, subs, () => setNavTab("dashboard"));
+                  }}
                 />
               )}
 
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5">
                 {activeTab === "video" &&
                   videoInfo.formats.map((stream) => (
                     <StreamRow
                       key={stream.itag}
                       label={`MP4 Video (${stream.qualityLabel || "Progressive"})`}
-                      meta={`${formatBytes(stream.contentLength)} • Video + Audio`}
+                      meta={`${stream.contentLength ? `${(parseInt(stream.contentLength) / 1024 / 1024).toFixed(1)} MB` : "Unknown Size"} • Video + Audio`}
                       isDownloading={downloads.some(d => d.url === stream.url && (d.status === "downloading" || d.status === "paused"))}
-                      onDownload={() => handleDownload(stream, "video")}
+                      onDownload={() =>
+                        handleDownload(videoInfo, stream, "video", trimRange, undefined, undefined, () => setNavTab("dashboard"))
+                      }
                     />
                   ))}
 
@@ -317,13 +170,16 @@ function IndexPopup() {
                       const isOpus = stream.mimeType.includes("opus");
                       const ext = isOpus ? "webm" : "m4a";
                       const kbps = Math.round((stream.bitrate || 0) / 1000);
+                      const sizeMb = stream.contentLength ? (parseInt(stream.contentLength) / 1024 / 1024).toFixed(1) : "?";
                       return (
                         <StreamRow
                           key={stream.itag}
                           label={`${ext.toUpperCase()} Audio (${kbps} kbps)`}
-                          meta={`${formatBytes(stream.contentLength)} • ${isOpus ? "Opus" : "AAC"}`}
+                          meta={`${sizeMb} MB • ${isOpus ? "Opus" : "AAC"}`}
                           isDownloading={downloads.some(d => d.url === stream.url && (d.status === "downloading" || d.status === "paused"))}
-                          onDownload={() => handleDownload(stream, "audio")}
+                          onDownload={() =>
+                            handleDownload(videoInfo, stream, "audio", trimRange, undefined, undefined, () => setNavTab("dashboard"))
+                          }
                         />
                       );
                     })}
@@ -338,13 +194,16 @@ function IndexPopup() {
                     })
                     .map((stream) => {
                       const isWebm = stream.mimeType.includes("webm");
+                      const sizeMb = stream.contentLength ? (parseInt(stream.contentLength) / 1024 / 1024).toFixed(1) : "?";
                       return (
                         <StreamRow
                           key={stream.itag}
                           label={`${isWebm ? "WEBM" : "MP4"} Video (${stream.qualityLabel})`}
-                          meta={`${formatBytes(stream.contentLength)} • Video Only`}
+                          meta={`${sizeMb} MB • Video Only`}
                           isDownloading={downloads.some(d => d.url === stream.url && (d.status === "downloading" || d.status === "paused"))}
-                          onDownload={() => handleDownload(stream, "adaptive")}
+                          onDownload={() =>
+                            handleDownload(videoInfo, stream, "adaptive", trimRange, undefined, undefined, () => setNavTab("dashboard"))
+                          }
                         />
                       );
                     })}
@@ -376,6 +235,14 @@ function IndexPopup() {
         <PopupHistoryTab historyList={historyList} clearHistory={clearHistory} />
       )}
     </div>
+  );
+}
+
+function IndexPopup() {
+  return (
+    <ThemeProvider>
+      <PopupContent />
+    </ThemeProvider>
   );
 }
 

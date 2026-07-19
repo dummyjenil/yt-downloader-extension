@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import styleText from "data-text:../styles/globals.css";
 import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "../types/youtube";
 import { extractVideoId } from "../utils/youtube";
+import { ThemeProvider, useTheme } from "../context/ThemeContext";
 
 // Subcomponents
 import { FAB } from "./youtube/FAB";
@@ -21,7 +22,8 @@ export const getStyle = () => {
   return style;
 };
 
-export default function YoutubeOverlay() {
+function YoutubeOverlayContent() {
+  const { themeConfig } = useTheme();
   const [videoId, setVideoId] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,13 +37,12 @@ export default function YoutubeOverlay() {
 
   // Load typography and track routing changes
   useEffect(() => {
-    // 1. Inject Outfit Google Font
+    // Inject Outfit Google Font
     const link = document.createElement("link");
-    link.href = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap";
+    link.href = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
 
-    // 2. SPA URL change tracking
     const handleUrlChange = () => {
       const url = window.location.href;
       const id = extractVideoId(url);
@@ -50,10 +51,7 @@ export default function YoutubeOverlay() {
 
     handleUrlChange();
 
-    // Listen to standard YouTube SPA transition completion event
     window.addEventListener("yt-navigate-finish", handleUrlChange);
-
-    // Fallback interval for robustness
     const interval = setInterval(handleUrlChange, 1000);
 
     return () => {
@@ -62,10 +60,9 @@ export default function YoutubeOverlay() {
     };
   }, []);
 
-  // Sync active downloads registry and listen to background updates
+  // Sync active downloads registry
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.runtime) {
-      // Fetch initial background status on mount
       chrome.runtime.sendMessage({ type: "GET_ALL_DOWNLOADS" }, (response) => {
         if (response && response.downloads) {
           setDownloads(response.downloads);
@@ -83,7 +80,6 @@ export default function YoutubeOverlay() {
     }
   }, []);
 
-  // Whenever videoId changes, reset video states (do NOT auto-fetch)
   useEffect(() => {
     setVideoInfo(null);
     setError(null);
@@ -190,14 +186,14 @@ export default function YoutubeOverlay() {
   const currentDownloadPercent = currentVideoJob ? currentVideoJob.percent : null;
   const currentDownloadStatus = currentVideoJob ? currentVideoJob.status : null;
 
-  const radius = 28;
+  const radius = 34;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = currentDownloadPercent !== null
     ? circumference - (circumference * currentDownloadPercent) / 100
     : circumference;
 
   return (
-    <div className="font-sans text-zinc-100">
+    <div className="font-sans text-base">
       {/* Floating Action Button (FAB) + Progress Circle */}
       <FAB
         onClick={() => {
@@ -216,23 +212,24 @@ export default function YoutubeOverlay() {
 
       {/* Modal Dialog Popup */}
       {showDialog && (
-        <div className="fixed inset-0 bg-black/65 backdrop-blur-md flex items-center justify-center z-[99999999] animate-fadeIn" onClick={() => setShowDialog(false)}>
-          <div className="w-[90%] max-w-[420px] bg-zinc-900/95 border border-white/10 rounded-3xl shadow-2xl p-6 flex flex-col box-border overflow-hidden animate-slideUp" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-[99999999] animate-fadeIn p-4 sm:p-5 overflow-y-auto" onClick={() => setShowDialog(false)}>
+          <div className={`w-full max-w-[600px] max-h-[85vh] my-auto ${themeConfig.container} ${themeConfig.radius} shadow-2xl p-5 sm:p-6 flex flex-col box-border overflow-y-auto animate-slideUp border-2 ${themeConfig.border}`} onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="flex justify-between items-start mb-5">
-              <div className="flex-1 pr-3">
-                <h3 className="text-sm font-bold m-0 mb-1 leading-snug text-zinc-100 line-clamp-2">
+            <div className={`flex justify-between items-start mb-4 pb-3 border-b ${themeConfig.border} shrink-0`}>
+              <div className="flex-1 pr-4">
+                <h3 className="text-base sm:text-lg font-black m-0 mb-1 leading-snug line-clamp-2">
                   {videoInfo ? videoInfo.title : "Extracting Video Streams"}
                 </h3>
-                <p className="text-[11px] text-zinc-400 m-0 font-medium">
+                <p className={`text-xs sm:text-sm ${themeConfig.mutedText} m-0 font-bold`}>
                   {videoInfo ? `by ${videoInfo.author}` : "Please wait..."}
                 </p>
               </div>
               <button
-                className="w-8 h-8 rounded-full bg-white/[0.03] hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-zinc-100 flex items-center justify-center cursor-pointer transition-all hover:rotate-90 p-0 shrink-0"
+                className={`w-9 h-9 sm:w-10 sm:h-10 ${themeConfig.radius} ${themeConfig.secondaryBtn} flex items-center justify-center cursor-pointer transition-all hover:rotate-90 p-0 shrink-0`}
                 onClick={() => setShowDialog(false)}
+                title="Close"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
@@ -246,21 +243,21 @@ export default function YoutubeOverlay() {
 
             {/* Loader State */}
             {loading && (
-              <div className="flex flex-col items-center justify-center py-8 text-zinc-400 text-xs">
-                <div className="w-6 h-6 border-2 border-white/5 border-t-purple-400 rounded-full animate-spin mb-3"></div>
-                <span>Parsing InnerTube streaming configuration...</span>
+              <div className={`flex flex-col items-center justify-center py-12 ${themeConfig.mutedText} text-base font-bold`}>
+                <div className="w-10 h-10 border-4 border-white/10 border-t-violet-400 rounded-full animate-spin mb-4"></div>
+                <span>Parsing YouTube streaming configuration...</span>
               </div>
             )}
 
             {/* Error State */}
             {error && (
-              <div className="text-xs text-rose-400 leading-relaxed p-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl mt-2 text-center">
+              <div className="text-base text-rose-400 leading-relaxed p-5 bg-rose-500/10 border border-rose-500/30 rounded-2xl mt-2 text-center font-bold">
                 <div>{error}</div>
                 <button
-                  className="mt-2.5 bg-rose-500 hover:bg-rose-600 text-white px-3.5 py-1.5 rounded-xl text-[11px] font-semibold transition-colors cursor-pointer"
+                  className={`${themeConfig.dangerBtn} ${themeConfig.radius} mt-4 px-6 py-2.5 text-sm font-black cursor-pointer`}
                   onClick={() => fetchInfo(videoId!)}
                 >
-                  Retry
+                  Retry Extraction
                 </button>
               </div>
             )}
@@ -283,5 +280,13 @@ export default function YoutubeOverlay() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function YoutubeOverlay() {
+  return (
+    <ThemeProvider>
+      <YoutubeOverlayContent />
+    </ThemeProvider>
   );
 }
