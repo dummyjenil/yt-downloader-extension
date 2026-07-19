@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import React from "react";
 
-import type { VideoInfo, StreamFormat } from "./types/youtube";
+import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "./types/youtube";
 import { extractVideoId, formatBytes } from "./utils/youtube";
 import { themeStyles, themeColors } from "./styles/theme";
 import { getDirectoryHandle, storeDirectoryHandle, clearDirectoryHandle } from "./utils/storage";
@@ -26,11 +26,11 @@ function IndexPopup() {
 
   // Navigation tabs for popup
   const [navTab, setNavTab] = useState<"streams" | "dashboard" | "settings" | "history">("streams");
-  
+
   // Downloads state registry synced from background
   const [downloads, setDownloads] = useState<any[]>([]);
   const [historyList, setHistoryList] = useState<any[]>([]);
-  
+
   // Local Settings States
   const [chunkSize, setChunkSize] = useState<number>(5 * 1024 * 1024);
   const [concurrency, setConcurrency] = useState<number>(3);
@@ -164,7 +164,23 @@ function IndexPopup() {
       ext = "webm";
     }
 
-    const suffix = stream.qualityLabel ? `_${stream.qualityLabel}` : "";
+    const totalSec = parseInt(videoInfo.lengthSeconds || "0", 10);
+    const isTrimmed = trimRange && trimRange.enabled && totalSec > 0;
+    const trimmedRatio = isTrimmed
+      ? Math.max(0.005, Math.min(1.0, (trimRange.endTimeSec - trimRange.startTimeSec) / totalSec))
+      : 1.0;
+
+    let scaledContentLength = stream.contentLength;
+    if (stream.contentLength && isTrimmed) {
+      scaledContentLength = String(Math.round(parseInt(stream.contentLength, 10) * trimmedRatio));
+    }
+
+    if (audioSize && isTrimmed) {
+      audioSize = Math.round(audioSize * trimmedRatio);
+    }
+
+    const trimSuffix = isTrimmed ? `_trimmed_${trimRange.startTimeSec}s-${trimRange.endTimeSec}s` : "";
+    const suffix = stream.qualityLabel ? `_${stream.qualityLabel}${trimSuffix}` : trimSuffix;
     const cleanTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, "_");
     const filename = `${cleanTitle}${suffix}`;
 
@@ -174,7 +190,7 @@ function IndexPopup() {
       url: stream.url,
       title: filename,
       ext: ext,
-      contentLength: stream.contentLength || "",
+      contentLength: scaledContentLength || "",
       audioUrl: audioUrl,
       audioSize: audioSize ? String(audioSize) : "",
       audioExt: audioExt || "",
@@ -414,12 +430,12 @@ function IndexPopup() {
                     </div>
                   </div>
                   <div style={themeStyles.progressBarContainer}>
-                    <div 
-                      style={{ 
-                        ...themeStyles.progressBarFill, 
+                    <div
+                      style={{
+                        ...themeStyles.progressBarFill,
                         width: `${job.percent}%`,
                         background: job.status === "paused" ? "#fbbf24" : themeColors.accent
-                      }} 
+                      }}
                     />
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#a1a1aa", marginTop: "4px" }}>

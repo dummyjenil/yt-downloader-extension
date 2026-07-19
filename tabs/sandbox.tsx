@@ -135,8 +135,8 @@ export default function SandboxPage() {
         }
 
         const outputBuf = outputData instanceof Uint8Array 
-          ? outputData.buffer 
-          : new Uint8Array(outputData as any).buffer;
+          ? (outputData.buffer.slice(outputData.byteOffset, outputData.byteOffset + outputData.byteLength) as ArrayBuffer)
+          : (new Uint8Array(outputData as any).buffer as ArrayBuffer);
 
         // Post output back to parent page, using transferables for performance
         window.parent.postMessage(

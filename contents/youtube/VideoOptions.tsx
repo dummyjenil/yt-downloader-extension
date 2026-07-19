@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "../../types/youtube";
 import { formatBytes } from "../../utils/youtube";
 import { CustomFusionSelector } from "../../components/CustomFusionSelector";
@@ -27,41 +27,53 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
   handleDownload
 }) => {
   const totalSec = parseInt(videoInfo.lengthSeconds || "0", 10);
+  const [trimRange, setTrimRange] = useState<TrimRange>({
+    enabled: false,
+    startTimeSec: 0,
+    endTimeSec: totalSec || 180
+  });
+
+  const handleRangeChange = (range: TrimRange) => {
+    setTrimRange(range);
+    if (onRangeChange) onRangeChange(range);
+  };
+
+  const trimmedRatio = (trimRange.enabled && totalSec > 0)
+    ? Math.max(0.005, Math.min(1.0, (trimRange.endTimeSec - trimRange.startTimeSec) / totalSec))
+    : 1.0;
 
   return (
     <>
       {/* Range Trimmer Component */}
-      {onRangeChange && (
-        <RangeSelector totalDurationSec={totalSec} onChange={onRangeChange} />
-      )}
+      <RangeSelector totalDurationSec={totalSec} onChange={handleRangeChange} />
 
       {/* Tabs Capsule */}
       <div className="ytd-tabs">
-        <button 
+        <button
           className={`ytd-tab-btn ${activeTab === "video" ? "active" : ""}`}
           onClick={() => setActiveTab("video")}
         >
           Video
         </button>
-        <button 
+        <button
           className={`ytd-tab-btn ${activeTab === "audio" ? "active" : ""}`}
           onClick={() => setActiveTab("audio")}
         >
           Audio
         </button>
-        <button 
+        <button
           className={`ytd-tab-btn ${activeTab === "adaptive" ? "active" : ""}`}
           onClick={() => setActiveTab("adaptive")}
         >
           Video Only
         </button>
-        <button 
+        <button
           className={`ytd-tab-btn ${activeTab === "subtitle" ? "active" : ""}`}
           onClick={() => setActiveTab("subtitle")}
         >
           Subtitles (SRT)
         </button>
-        <button 
+        <button
           className={`ytd-tab-btn ${activeTab === "fusion" ? "active" : ""}`}
           onClick={() => setActiveTab("fusion")}
         >
@@ -75,6 +87,7 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
           <CustomFusionSelector
             videoInfo={videoInfo}
             downloads={downloads}
+            trimRange={trimRange}
             handleDownload={handleDownload as any}
           />
         )}
@@ -107,10 +120,10 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
                         </span>
                       </span>
                       <span className="ytd-stream-meta">
-                        Word-level SRT Format • Subtitle Track
+                        Word-level SRT Format {trimRange.enabled ? "• Trimmed Window" : "• Subtitle Track"}
                       </span>
                     </div>
-                    <button 
+                    <button
                       className="ytd-download-icon-btn"
                       disabled={isDownloading}
                       onClick={() => handleDownload(subtitleStream, "subtitle")}
@@ -137,6 +150,8 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
             const isDownloading = downloads.some(
               (d) => d.url === stream.url && (d.status === "downloading" || d.status === "paused")
             );
+            const rawSize = parseInt(stream.contentLength || "0", 10);
+            const displaySize = rawSize > 0 ? Math.round(rawSize * trimmedRatio) : 0;
             return (
               <div className="ytd-stream-row" key={stream.itag}>
                 <div className="ytd-stream-info">
@@ -144,10 +159,10 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
                     MP4 Progressive ({stream.qualityLabel || "Progressive"})
                   </span>
                   <span className="ytd-stream-meta">
-                    {formatBytes(stream.contentLength)} • Video + Audio
+                    {formatBytes(displaySize || stream.contentLength)} • Video + Audio {trimRange.enabled ? "• Trimmed" : ""}
                   </span>
                 </div>
-                <button 
+                <button
                   className="ytd-download-icon-btn"
                   disabled={isDownloading}
                   onClick={() => handleDownload(stream, "video")}
@@ -179,6 +194,8 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
               const isDownloading = downloads.some(
                 (d) => d.url === stream.url && (d.status === "downloading" || d.status === "paused")
               );
+              const rawSize = parseInt(stream.contentLength || "0", 10);
+              const displaySize = rawSize > 0 ? Math.round(rawSize * trimmedRatio) : 0;
               return (
                 <div className="ytd-stream-row" key={`${stream.itag}_${stream.langCode || "def"}`}>
                   <div className="ytd-stream-info">
@@ -191,10 +208,10 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
                       )}
                     </span>
                     <span className="ytd-stream-meta">
-                      {formatBytes(stream.contentLength)} • {langTag} • {isOpus ? "Opus" : "AAC"}
+                      {formatBytes(displaySize || stream.contentLength)} • {langTag} • {isOpus ? "Opus" : "AAC"} {trimRange.enabled ? "• Trimmed" : ""}
                     </span>
                   </div>
-                  <button 
+                  <button
                     className="ytd-download-icon-btn"
                     disabled={isDownloading}
                     onClick={() => handleDownload(stream, "audio")}
@@ -227,6 +244,8 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
               const isDownloading = downloads.some(
                 (d) => d.url === stream.url && (d.status === "downloading" || d.status === "paused")
               );
+              const rawSize = parseInt(stream.contentLength || "0", 10);
+              const displaySize = rawSize > 0 ? Math.round(rawSize * trimmedRatio) : 0;
               return (
                 <div className="ytd-stream-row" key={stream.itag}>
                   <div className="ytd-stream-info">
@@ -234,10 +253,10 @@ export const VideoOptions: React.FC<VideoOptionsProps> = ({
                       {isWebm ? "WEBM" : "MP4"} Video ({stream.qualityLabel})
                     </span>
                     <span className="ytd-stream-meta">
-                      {formatBytes(stream.contentLength)} • Video Only
+                      {formatBytes(displaySize || stream.contentLength)} • Video Only {trimRange.enabled ? "• Trimmed" : ""}
                     </span>
                   </div>
-                  <button 
+                  <button
                     className="ytd-download-icon-btn"
                     disabled={isDownloading}
                     onClick={() => handleDownload(stream, "adaptive")}

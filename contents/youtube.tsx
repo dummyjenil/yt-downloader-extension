@@ -1,6 +1,6 @@
 import type { PlasmoCSConfig } from "plasmo";
 import React, { useEffect, useState } from "react";
-import type { VideoInfo, StreamFormat } from "../types/youtube";
+import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "../types/youtube";
 import { extractVideoId } from "../utils/youtube";
 
 // Subcomponents and Styles
@@ -145,7 +145,23 @@ export default function YoutubeOverlay() {
       ext = "webm";
     }
 
-    const suffix = stream.qualityLabel ? `_${stream.qualityLabel}` : "";
+    const totalSec = parseInt(videoInfo.lengthSeconds || "0", 10);
+    const isTrimmed = trimRange && trimRange.enabled && totalSec > 0;
+    const trimmedRatio = isTrimmed
+      ? Math.max(0.005, Math.min(1.0, (trimRange.endTimeSec - trimRange.startTimeSec) / totalSec))
+      : 1.0;
+
+    let scaledContentLength = stream.contentLength;
+    if (stream.contentLength && isTrimmed) {
+      scaledContentLength = String(Math.round(parseInt(stream.contentLength, 10) * trimmedRatio));
+    }
+
+    if (audioSize && isTrimmed) {
+      audioSize = Math.round(audioSize * trimmedRatio);
+    }
+
+    const trimSuffix = isTrimmed ? `_trimmed_${trimRange.startTimeSec}s-${trimRange.endTimeSec}s` : "";
+    const suffix = stream.qualityLabel ? `_${stream.qualityLabel}${trimSuffix}` : trimSuffix;
     const cleanTitle = videoInfo.title.replace(/[\\/:*?"<>|]/g, "_");
     const filename = `${cleanTitle}${suffix}`;
 
@@ -156,7 +172,7 @@ export default function YoutubeOverlay() {
         url: stream.url,
         title: filename,
         ext: ext,
-        contentLength: stream.contentLength || "",
+        contentLength: scaledContentLength || "",
         audioUrl: audioUrl,
         audioSize: audioSize ? String(audioSize) : "",
         audioExt: audioExt || "",
@@ -186,8 +202,8 @@ export default function YoutubeOverlay() {
   // Circular progress calculations
   const radius = 28;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = currentDownloadPercent !== null 
-    ? circumference - (circumference * currentDownloadPercent) / 100 
+  const strokeDashoffset = currentDownloadPercent !== null
+    ? circumference - (circumference * currentDownloadPercent) / 100
     : circumference;
 
   return (

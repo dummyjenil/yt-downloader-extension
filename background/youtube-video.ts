@@ -1,4 +1,29 @@
 import { setDNRHeadersForClient } from "./dnr";
+import { decipherSignature } from "../decipherer";
+
+function parseFormatUrl(f: any): string | undefined {
+  if (f.url) return f.url;
+  const cipherStr = f.signatureCipher || f.cipher;
+  if (!cipherStr) return undefined;
+  
+  try {
+    const params = new URLSearchParams(cipherStr);
+    const rawUrl = params.get("url");
+    if (!rawUrl) return undefined;
+
+    const s = params.get("s");
+    const sp = params.get("sp") || "sig";
+
+    if (s) {
+      const deciphered = decipherSignature(s, "");
+      return `${rawUrl}&${sp}=${encodeURIComponent(deciphered)}`;
+    }
+    return rawUrl;
+  } catch (err) {
+    console.warn("Failed to parse format cipher:", err);
+    return undefined;
+  }
+}
 
 let cachedApiKey: string | null = process.env.PLASMO_PUBLIC_YOUTUBE_API_KEY || null;
 
@@ -177,32 +202,36 @@ export async function fetchVideoInfo(videoId: string) {
       });
 
       // Extract formats
-      const formats = (streamingData.formats || []).map((f: any) => ({
-        itag: f.itag,
-        url: f.url,
-        mimeType: f.mimeType,
-        qualityLabel: f.qualityLabel,
-        contentLength: f.contentLength
-      }));
-
-      const adaptiveFormats = (streamingData.adaptiveFormats || []).map((f: any) => {
-        const audioTrack = f.audioTrack || {};
-        const rawTrackId = audioTrack.id || "";
-        const langCode = rawTrackId ? rawTrackId.split(".")[0] : undefined;
-        return {
+      const formats = (streamingData.formats || [])
+        .map((f: any) => ({
           itag: f.itag,
-          url: f.url,
+          url: parseFormatUrl(f),
           mimeType: f.mimeType,
           qualityLabel: f.qualityLabel,
-          contentLength: f.contentLength,
-          audioQuality: f.audioQuality,
-          bitrate: f.bitrate,
-          langCode: langCode,
-          displayName: audioTrack.displayName,
-          audioTrackId: rawTrackId,
-          isDefaultAudio: !!audioTrack.audioIsDefault
-        };
-      });
+          contentLength: f.contentLength
+        }))
+        .filter((f: any) => !!f.url);
+
+      const adaptiveFormats = (streamingData.adaptiveFormats || [])
+        .map((f: any) => {
+          const audioTrack = f.audioTrack || {};
+          const rawTrackId = audioTrack.id || "";
+          const langCode = rawTrackId ? rawTrackId.split(".")[0] : undefined;
+          return {
+            itag: f.itag,
+            url: parseFormatUrl(f),
+            mimeType: f.mimeType,
+            qualityLabel: f.qualityLabel,
+            contentLength: f.contentLength,
+            audioQuality: f.audioQuality,
+            bitrate: f.bitrate,
+            langCode: langCode,
+            displayName: audioTrack.displayName,
+            audioTrackId: rawTrackId,
+            isDefaultAudio: !!audioTrack.audioIsDefault
+          };
+        })
+        .filter((f: any) => !!f.url);
 
       return {
         title: videoDetails.title,

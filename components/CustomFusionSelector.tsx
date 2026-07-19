@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import type { VideoInfo, StreamFormat, CaptionTrack } from "../types/youtube";
+import type { VideoInfo, StreamFormat, CaptionTrack, TrimRange } from "../types/youtube";
 import { formatBytes } from "../utils/youtube";
 import { themeColors, themeStyles } from "../styles/theme";
 
 interface CustomFusionSelectorProps {
   videoInfo: VideoInfo;
   downloads: any[];
+  trimRange?: TrimRange;
   handleDownload: (
     videoStream: StreamFormat,
     category: "fusion",
@@ -17,6 +18,7 @@ interface CustomFusionSelectorProps {
 export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
   videoInfo,
   downloads,
+  trimRange,
   handleDownload
 }) => {
   const videoStreams = videoInfo.adaptiveFormats
@@ -48,7 +50,7 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
     );
   }
 
-  // Calculate container details
+  // Calculate container details & trimmed size ratio
   const videoMime = selectedVideo.mimeType.toLowerCase();
   const audioMime = selectedAudio.mimeType.toLowerCase();
 
@@ -56,8 +58,14 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
   const isAudioWebm = audioMime.includes("webm");
   const containersMatch = isVideoWebm === isAudioWebm;
 
-  const totalSize = (parseInt(selectedVideo.contentLength || "0", 10) || 0) + 
-                    (parseInt(selectedAudio.contentLength || "0", 10) || 0);
+  const totalSec = parseInt(videoInfo.lengthSeconds || "0", 10);
+  const trimmedRatio = (trimRange && trimRange.enabled && totalSec > 0)
+    ? Math.max(0.005, Math.min(1.0, (trimRange.endTimeSec - trimRange.startTimeSec) / totalSec))
+    : 1.0;
+
+  const rawTotalSize = (parseInt(selectedVideo.contentLength || "0", 10) || 0) +
+    (parseInt(selectedAudio.contentLength || "0", 10) || 0);
+  const totalSize = Math.round(rawTotalSize * trimmedRatio);
 
   const isDownloading = downloads.some(
     (d) =>

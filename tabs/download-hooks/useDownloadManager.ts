@@ -140,7 +140,14 @@ export function useDownloadManager() {
     const trimEnd = urlParams.get("trimEnd");
     const trimRange = (trimStart && trimEnd) ? { enabled: true, startTimeSec: parseFloat(trimStart), endTimeSec: parseFloat(trimEnd) } : undefined;
     const subtitlesStr = urlParams.get("subtitles");
-    const selectedSubtitles = subtitlesStr ? JSON.parse(subtitlesStr) : undefined;
+    let selectedSubtitles: CaptionTrack[] | undefined = undefined;
+    if (subtitlesStr) {
+      try {
+        selectedSubtitles = JSON.parse(subtitlesStr);
+      } catch (e) {
+        console.warn("Failed to parse subtitles query parameter:", e);
+      }
+    }
 
     if (url) {
       // Small timeout to allow everything to mount
@@ -311,7 +318,7 @@ export function useDownloadManager() {
 
         let jsonUrl = job.url;
         if (jsonUrl.includes('fmt=')) {
-          jsonUrl = jsonUrl.replace('fmt=srv3', 'fmt=json3');
+          jsonUrl = jsonUrl.replace(/fmt=[^&]+/, 'fmt=json3');
         } else {
           jsonUrl = `${jsonUrl}&fmt=json3`;
         }
@@ -381,7 +388,7 @@ export function useDownloadManager() {
           }
           if (perm === "granted") {
             setDirPermission("granted");
-            let targetDirHandle = dirHandle;
+            const targetDirHandle = dirHandle;
 
             const fileHandle = await targetDirHandle.getFileHandle(`${job.title}.${job.ext}`, { create: true });
             writableStream = await fileHandle.createWritable();
@@ -613,7 +620,7 @@ export function useDownloadManager() {
             const track = job.selectedSubtitles[i];
             let jsonUrl = track.baseUrl;
             if (jsonUrl.includes('fmt=')) {
-              jsonUrl = jsonUrl.replace('fmt=srv3', 'fmt=json3');
+              jsonUrl = jsonUrl.replace(/fmt=[^&]+/, 'fmt=json3');
             } else {
               jsonUrl = `${jsonUrl}&fmt=json3`;
             }
@@ -1042,17 +1049,17 @@ async function runFFmpegMerge(
 
     window.addEventListener("message", handleResponse);
 
-    const videoBuf = videoData.buffer;
-    const audioBuf = audioData ? audioData.buffer : null;
+    const videoBuf = videoData.buffer as ArrayBuffer;
+    const audioBuf = audioData ? (audioData.buffer as ArrayBuffer) : null;
 
     const subTransfers: ArrayBuffer[] = [];
     const subPayloads = (subtitleBuffers || []).map((s) => {
-      const buf = s.data.buffer;
+      const buf = s.data.buffer as ArrayBuffer;
       subTransfers.push(buf);
       return { name: s.name, code: s.code, data: buf };
     });
 
-    const transferables: ArrayBuffer[] = [videoBuf];
+    const transferables: Transferable[] = [videoBuf];
     if (audioBuf) transferables.push(audioBuf);
     transferables.push(...subTransfers);
 
