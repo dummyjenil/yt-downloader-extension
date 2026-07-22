@@ -1,23 +1,26 @@
 import { useEffect, useState } from "react";
 import type { VideoInfo, TrimRange } from "../types/youtube";
-import { extractVideoId } from "../utils/youtube";
+import { extractVideoId, extractPlaylistId } from "../utils/youtube";
 
 export function useVideoInfo() {
   const [urlInput, setUrlInput] = useState("");
   const [videoId, setVideoId] = useState<string | null>(null);
+  const [playlistId, setPlaylistId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [activeTab, setActiveTab] = useState<"video" | "audio" | "adaptive" | "fusion" | "subtitle">("video");
   const [trimRange, setTrimRange] = useState<TrimRange | null>(null);
 
-  // Auto detect active YouTube tab video ID
+  // Auto detect active YouTube tab video ID and playlist ID
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.tabs) {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const activeBrowserTab = tabs[0];
         if (activeBrowserTab && activeBrowserTab.url) {
           const id = extractVideoId(activeBrowserTab.url);
+          const pId = extractPlaylistId(activeBrowserTab.url);
+          if (pId) setPlaylistId(pId);
           if (id) {
             setVideoId(id);
             fetchInfo(id);
@@ -26,6 +29,13 @@ export function useVideoInfo() {
       });
     }
   }, []);
+
+  const openPlaylistTab = (pId?: string) => {
+    const targetId = pId || playlistId;
+    if (targetId && typeof chrome !== "undefined" && chrome.runtime) {
+      chrome.runtime.sendMessage({ type: "OPEN_PLAYLIST_TAB", playlistId: targetId });
+    }
+  };
 
   const fetchInfo = (id: string) => {
     setLoading(true);
@@ -67,6 +77,8 @@ export function useVideoInfo() {
     urlInput,
     setUrlInput,
     videoId,
+    playlistId,
+    openPlaylistTab,
     loading,
     error,
     videoInfo,

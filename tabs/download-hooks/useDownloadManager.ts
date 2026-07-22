@@ -67,7 +67,7 @@ export function useDownloadManager() {
         cancelJob(message.id);
         sendResponse({ success: true });
       } else if (message.type === "NEW_DOWNLOAD_JOB") {
-        const { url, title, ext, contentLength, audioUrl, audioSize, audioExt, initRange, indexRange, audioInitRange, audioIndexRange, trimRange, selectedSubtitles } = message;
+        const { url, videoId, title, ext, contentLength, audioUrl, audioSize, audioExt, initRange, indexRange, audioInitRange, audioIndexRange, trimRange, selectedSubtitles, embedThumbnail, embedChapters } = message;
         addNewJob(
           url,
           title,
@@ -81,7 +81,10 @@ export function useDownloadManager() {
           audioInitRange,
           audioIndexRange,
           trimRange,
-          selectedSubtitles
+          selectedSubtitles,
+          videoId,
+          embedThumbnail,
+          embedChapters
         );
         sendResponse({ success: true });
       }
@@ -223,7 +226,10 @@ export function useDownloadManager() {
     audioInitRange?: { start: string; end: string },
     audioIndexRange?: { start: string; end: string },
     trimRange?: TrimRange,
-    selectedSubtitles?: CaptionTrack[]
+    selectedSubtitles?: CaptionTrack[],
+    videoId?: string,
+    embedThumbnail?: boolean,
+    embedChapters?: boolean
   ) => {
     const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_");
     const jobId = `job_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -231,6 +237,7 @@ export function useDownloadManager() {
     const newJob: JobState = {
       id: jobId,
       url,
+      videoId,
       title: cleanTitle,
       ext,
       totalSize: (totalSize || 0) + (audioUrl ? (audioSize || 0) : 0),
@@ -256,7 +263,9 @@ export function useDownloadManager() {
       audioInitRange,
       audioIndexRange,
       trimRange,
-      selectedSubtitles
+      selectedSubtitles,
+      embedThumbnail: embedThumbnail !== undefined ? embedThumbnail : true,
+      embedChapters: embedChapters !== undefined ? embedChapters : true
     };
 
     jobsRef.current.set(jobId, newJob);

@@ -2,7 +2,7 @@ import type { PlasmoCSConfig } from "plasmo";
 import React, { useEffect, useState } from "react";
 import styleText from "data-text:../styles/globals.css";
 import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "../types/youtube";
-import { extractVideoId } from "../utils/youtube";
+import { extractVideoId, extractPlaylistId } from "../utils/youtube";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 
 // Subcomponents
@@ -25,6 +25,7 @@ export const getStyle = () => {
 function YoutubeOverlayContent() {
   const { themeConfig } = useTheme();
   const [videoId, setVideoId] = useState<string | null>(null);
+  const [playlistId, setPlaylistId] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +47,9 @@ function YoutubeOverlayContent() {
     const handleUrlChange = () => {
       const url = window.location.href;
       const id = extractVideoId(url);
+      const pId = extractPlaylistId(url);
       setVideoId(id);
+      setPlaylistId(pId);
     };
 
     handleUrlChange();
@@ -159,6 +162,7 @@ function YoutubeOverlayContent() {
       chrome.runtime.sendMessage({
         type: "ADD_DOWNLOAD_JOB",
         url: stream.url,
+        videoId: videoInfo.videoId || videoId,
         title: filename,
         ext: ext,
         contentLength: scaledContentLength || "",
@@ -166,7 +170,9 @@ function YoutubeOverlayContent() {
         audioSize: audioSize ? String(audioSize) : "",
         audioExt: audioExt || "",
         trimRange: trimRange && trimRange.enabled ? trimRange : undefined,
-        selectedSubtitles: selectedSubtitles
+        selectedSubtitles: selectedSubtitles,
+        embedThumbnail: true,
+        embedChapters: true
       }).catch((e) => {
         console.error("Failed to add download job:", e);
         alert("Failed to initiate background downloader.");
@@ -174,7 +180,7 @@ function YoutubeOverlayContent() {
     }
   };
 
-  if (!videoId) return null;
+  if (!videoId && !playlistId) return null;
 
   const activeJobs = downloads.filter((d) => d.status === "downloading" || d.status === "paused");
   const cleanTitleForMatch = videoInfo ? videoInfo.title.replace(/[\\/:*?"<>|]/g, "_") : "";
@@ -218,10 +224,10 @@ function YoutubeOverlayContent() {
             <div className={`flex justify-between items-start mb-4 pb-3 border-b ${themeConfig.border} shrink-0`}>
               <div className="flex-1 pr-4">
                 <h3 className="text-base sm:text-lg font-black m-0 mb-1 leading-snug line-clamp-2">
-                  {videoInfo ? videoInfo.title : "Extracting Video Streams"}
+                  {videoInfo ? videoInfo.title : (playlistId ? "YouTube Playlist Page" : "Extracting Video Streams")}
                 </h3>
                 <p className={`text-xs sm:text-sm ${themeConfig.mutedText} m-0 font-bold`}>
-                  {videoInfo ? `by ${videoInfo.author}` : "Please wait..."}
+                  {videoInfo ? `by ${videoInfo.author}` : (playlistId ? "Playlist batch downloader ready" : "Please wait...")}
                 </p>
               </div>
               <button
@@ -235,6 +241,31 @@ function YoutubeOverlayContent() {
                 </svg>
               </button>
             </div>
+
+            {/* Playlist Banner Alert */}
+            {playlistId && (
+              <div className={`p-4 mb-4 bg-gradient-to-r from-violet-600/30 to-fuchsia-600/30 border border-violet-500/40 ${themeConfig.radius} flex items-center justify-between gap-3 shadow-lg shrink-0`}>
+                <div className="flex flex-col">
+                  <span className="text-xs font-black uppercase text-violet-300 tracking-wider">
+                    🎵 Playlist Detected
+                  </span>
+                  <span className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                    Batch Download entire playlist with custom video quality & audio settings
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDialog(false);
+                    if (typeof chrome !== "undefined" && chrome.runtime) {
+                      chrome.runtime.sendMessage({ type: "OPEN_PLAYLIST_TAB", playlistId });
+                    }
+                  }}
+                  className={`py-2 px-4 text-xs font-black ${themeConfig.radius} ${themeConfig.primaryBtn} shadow-md cursor-pointer shrink-0`}
+                >
+                  Open Playlist Manager 🚀
+                </button>
+              </div>
+            )}
 
             {/* Detail Card (Video) */}
             {videoInfo && (

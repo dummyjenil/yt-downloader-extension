@@ -1,6 +1,6 @@
-import type { VideoInfo } from "./types/youtube";
 import { fetchVideoInfo } from "./background/youtube-video";
 import { setDNRHeadersForClient } from "./background/dnr";
+import { fetchPlaylistDetails } from "./utils/playlist";
 
 // Register DNR rules on install & runtime startup
 chrome.runtime.onInstalled.addListener(() => {
@@ -52,6 +52,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.create({ url: message.url });
     sendResponse({ success: true });
     return false;
+  }
+
+  if (message.type === "OPEN_PLAYLIST_TAB") {
+    const url = chrome.runtime.getURL(`tabs/playlist.html?list=${message.playlistId}`);
+    chrome.tabs.create({ url, active: true });
+    sendResponse({ success: true });
+    return false;
+  }
+
+  if (message.type === "GET_PLAYLIST_DETAILS") {
+    const playlistId = message.playlistId;
+    fetchPlaylistDetails(playlistId)
+      .then((details) => {
+        sendResponse({ success: true, details });
+      })
+      .catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+    return true; // Async response
   }
 
   if (message.type === "GET_VIDEO_INFO") {

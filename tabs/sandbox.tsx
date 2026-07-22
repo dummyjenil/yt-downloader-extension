@@ -7,12 +7,14 @@ export default function SandboxPage() {
       // Ensure the message is what we expect
       if (!event.data || event.data.type !== "MERGE") return;
 
-      const { videoData, audioData, subtitleBuffers, trimRange, ext, audioExt } = event.data;
+      const { videoData, audioData, subtitleBuffers, thumbnailBuffer, chapterMetadata, metadataInfo, trimRange, ext, audioExt } = event.data;
       const logs: string[] = [];
 
       console.log("⚡ [SANDBOX RECEIVED MERGE TASK]", {
         videoDataSize: videoData ? videoData.byteLength : 0,
         audioDataSize: audioData ? audioData.byteLength : 0,
+        thumbnailSize: thumbnailBuffer ? thumbnailBuffer.byteLength : 0,
+        hasChapters: !!chapterMetadata,
         ext,
         audioExt,
         trimRange
@@ -86,29 +88,64 @@ export default function SandboxPage() {
           }
         }
 
+        // Write chapter metadata if present
+        let chapterFileName = "";
+        if (chapterMetadata) {
+          chapterFileName = "ffmetadata.txt";
+          await ffmpeg.writeFile(chapterFileName, new TextEncoder().encode(chapterMetadata));
+        }
+
+        // Write thumbnail cover art if present
+        let thumbFileName = "";
+        if (thumbnailBuffer) {
+          thumbFileName = "thumbnail.jpg";
+          await ffmpeg.writeFile(thumbFileName, new Uint8Array(thumbnailBuffer));
+        }
+
         const ffmpegArgs: string[] = [];
         const isTrimming = trimRange && trimRange.enabled;
         const vSeek = (isTrimming && trimRange.vSeek !== undefined) ? trimRange.vSeek : (isTrimming ? Math.max(0, trimRange.startTimeSec) : 0);
         const aSeek = (isTrimming && trimRange.aSeek !== undefined) ? trimRange.aSeek : (isTrimming ? Math.max(0, trimRange.startTimeSec) : 0);
         const durationSec = isTrimming ? Math.max(0.1, trimRange.endTimeSec - trimRange.startTimeSec) : 0;
 
-        // Input 0: Primary video/media file (with -ss before -i for fast keyframe alignment)
+        let inputCount = 0;
+
+        // Input 0: Primary video/media file
         if (isTrimming) {
           ffmpegArgs.push("-ss", String(vSeek));
         }
         ffmpegArgs.push("-i", videoName);
+        const vInputIdx = inputCount++;
 
         // Input 1: Optional separate audio file
+        let aInputIdx = -1;
         if (audioName) {
           if (isTrimming) {
             ffmpegArgs.push("-ss", String(aSeek));
           }
           ffmpegArgs.push("-i", audioName);
+          aInputIdx = inputCount++;
         }
 
-        // Input 2+: Optional subtitle files (omit -ss before SRT inputs so subtitle timestamps align with video)
+        // Input 2+: Optional subtitle files
+        const subInputIndices: number[] = [];
         for (const subName of subFileNames) {
+          subInputIndices.push(inputCount++);
           ffmpegArgs.push("-i", subName);
+        }
+
+        // Input N: Optional chapter metadata file
+        let metaInputIdx = -1;
+        if (chapterFileName) {
+          metaInputIdx = inputCount++;
+          ffmpegArgs.push("-f", "ffmetadata", "-i", chapterFileName);
+        }
+
+        // Input N: Optional thumbnail image file
+        let thumbInputIdx = -1;
+        if (thumbFileName) {
+          thumbInputIdx = inputCount++;
+          ffmpegArgs.push("-i", thumbFileName);
         }
 
         // Output duration limit
@@ -116,7 +153,7 @@ export default function SandboxPage() {
           ffmpegArgs.push("-t", String(durationSec));
         }
 
-        // Explicit Stream Mapping & Codec Selection (Exact match with verify_ts_downloader.ts)
+        // Stream Mapping & Codecs
         if (isAudioOnly) {
           ffmpegArgs.push("-map", "0:a:0");
           if (isTrimming || (ext === "webm" && finalAudioExt !== "webm")) {
@@ -131,14 +168,11 @@ export default function SandboxPage() {
             ffmpegArgs.push("-c:a", "copy");
           }
         } else {
-          // Stream copy video without re-encoding whole 1080p stream
-          ffmpegArgs.push("-map", "0:v:0");
+          ffmpegArgs.push("-map", `${vInputIdx}:v:0`);
           ffmpegArgs.push("-c:v", "copy");
 
           if (audioName) {
-            // Dual-stream fusion mode (Video Input 0 + Audio Input 1)
-            ffmpegArgs.push("-map", "1:a:0");
-
+            ffmpegArgs.push("-map", `${aInputIdx}:a:0`);
             const isMp4Output = ext === "mp4";
             const isWebmOutput = ext === "webm";
             const isAudioM4a = finalAudioExt === "m4a" || finalAudioExt === "mp4";
@@ -149,7 +183,6 @@ export default function SandboxPage() {
             } else if (isWebmOutput && isAudioM4a) {
               ffmpegArgs.push("-c:a", "libopus");
             } else if (isTrimming) {
-              // Re-encode audio when trimming dual streams to guarantee 100% audio sync & clean PTS alignment
               if (isMp4Output) {
                 ffmpegArgs.push("-c:a", "aac");
               } else if (isWebmOutput) {
@@ -161,8 +194,7 @@ export default function SandboxPage() {
               ffmpegArgs.push("-c:a", "copy");
             }
           } else {
-            // Single video file input (Progressive MP4 or Video-Only Adaptive)
-            ffmpegArgs.push("-map", "0:a:0?");
+            ffmpegArgs.push("-map", `${vInputIdx}:a:0?`);
             if (isTrimming) {
               ffmpegArgs.push("-c:a", "aac");
             } else {
@@ -176,10 +208,9 @@ export default function SandboxPage() {
         }
 
         // Subtitle codecs & metadata
-        if (subFileNames.length > 0) {
-          for (let i = 0; i < subFileNames.length; i++) {
-            const subInputIndex = audioName ? 2 + i : 1 + i;
-            ffmpegArgs.push("-map", `${subInputIndex}:s:0`);
+        if (subInputIndices.length > 0) {
+          for (let i = 0; i < subInputIndices.length; i++) {
+            ffmpegArgs.push("-map", `${subInputIndices[i]}:s:0`);
           }
           const subCodec = ext === "webm" ? "webvtt" : "mov_text";
           ffmpegArgs.push("-c:s", subCodec);
@@ -188,6 +219,25 @@ export default function SandboxPage() {
             const langCode = subtitleBuffers[i].code || "eng";
             ffmpegArgs.push(`-metadata:s:s:${i}`, `language=${langCode}`);
           }
+        }
+
+        // Chapter metadata mapping
+        if (metaInputIdx !== -1) {
+          ffmpegArgs.push("-map_metadata", String(metaInputIdx));
+        }
+
+        // Thumbnail / Cover Art mapping for MP4/M4A containers
+        if (thumbInputIdx !== -1 && (ext === "mp4" || ext === "m4a")) {
+          ffmpegArgs.push("-map", `${thumbInputIdx}:v:0`);
+          ffmpegArgs.push("-c:v:1", "copy");
+          ffmpegArgs.push("-disposition:v:1", "attached_pic");
+        }
+
+        // General ID3 / Track Metadata tags
+        if (metadataInfo) {
+          if (metadataInfo.title) ffmpegArgs.push("-metadata", `title=${metadataInfo.title}`);
+          if (metadataInfo.artist) ffmpegArgs.push("-metadata", `artist=${metadataInfo.artist}`);
+          ffmpegArgs.push("-metadata", `album=${metadataInfo.album || "YouTube Downloads"}`);
         }
 
         ffmpegArgs.push(outputName);

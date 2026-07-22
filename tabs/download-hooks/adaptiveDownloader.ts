@@ -1,6 +1,7 @@
 import { fetchSubtitleBuffers } from "../../utils/subtitle";
 import type { TrimRange } from "../../types/youtube";
 import { fetchSidxByteRange } from "../../utils/sidx";
+import { getJobAuxiliaryData } from "../../utils/downloadHelpers";
 
 import type { JobState } from "./types";
 import { runFFmpegMerge, mergeChunksToBuffer } from "./ffmpegMerge";
@@ -149,11 +150,14 @@ export async function processAdaptiveDownload(
         };
 
         const subtitleBuffers = await fetchSubtitleBuffers(job.selectedSubtitles, job.trimRange);
+        const aux = await getJobAuxiliaryData(job);
 
         console.log("🎬 [processAdaptiveDownload Calling runFFmpegMerge]", {
           videoBufLength: videoBuf.byteLength,
           audioBufLength: audioBuf.byteLength,
-          sidxTrimRange
+          sidxTrimRange,
+          hasThumb: !!aux.thumbnailBuffer,
+          hasChapters: !!aux.chapterMetadata
         });
 
         const mergedBuf = await runFFmpegMerge(
@@ -162,7 +166,10 @@ export async function processAdaptiveDownload(
           job.ext,
           job.audioExt,
           sidxTrimRange,
-          subtitleBuffers
+          subtitleBuffers,
+          aux.thumbnailBuffer,
+          aux.chapterMetadata,
+          aux.metadataInfo
         );
 
         console.log("💾 [processAdaptiveDownload Writing merged output to disk]", {
@@ -349,6 +356,7 @@ export async function processAdaptiveDownload(
     job.adaptiveAudioChunks?.clear();
 
     const subtitleBuffers = await fetchSubtitleBuffers(job.selectedSubtitles, job.trimRange);
+    const aux = await getJobAuxiliaryData(job);
 
     const mergedBuf = await runFFmpegMerge(
       videoBuf,
@@ -356,7 +364,10 @@ export async function processAdaptiveDownload(
       job.ext,
       job.audioExt,
       job.trimRange,
-      subtitleBuffers
+      subtitleBuffers,
+      aux.thumbnailBuffer,
+      aux.chapterMetadata,
+      aux.metadataInfo
     );
 
     await job.writableStream.write(mergedBuf);

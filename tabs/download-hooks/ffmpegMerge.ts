@@ -36,7 +36,10 @@ export async function runFFmpegMerge(
   ext: string,
   audioExt?: string,
   trimRange?: TrimRange,
-  subtitleBuffers?: { name: string; code: string; data: Uint8Array }[]
+  subtitleBuffers?: { name: string; code: string; data: Uint8Array }[],
+  thumbnailBuffer?: Uint8Array | null,
+  chapterMetadata?: string,
+  metadataInfo?: { title?: string; artist?: string; album?: string }
 ): Promise<Uint8Array> {
   // Node environment fallback for CLI test runner (verify_ts_downloader.ts)
   if (typeof window === "undefined" || typeof document === "undefined") {
@@ -201,8 +204,15 @@ export async function runFFmpegMerge(
       return { name: s.name, code: s.code, data: buf };
     });
 
+    const thumbBuf = thumbnailBuffer
+      ? ((thumbnailBuffer.byteOffset === 0 && thumbnailBuffer.byteLength === thumbnailBuffer.buffer.byteLength)
+        ? (thumbnailBuffer.buffer as ArrayBuffer)
+        : (thumbnailBuffer.buffer.slice(thumbnailBuffer.byteOffset, thumbnailBuffer.byteOffset + thumbnailBuffer.byteLength) as ArrayBuffer))
+      : null;
+
     const transferables: Transferable[] = [videoBuf];
     if (audioBuf) transferables.push(audioBuf);
+    if (thumbBuf) transferables.push(thumbBuf);
     transferables.push(...subTransfers);
 
     iframe.contentWindow!.postMessage(
@@ -211,6 +221,9 @@ export async function runFFmpegMerge(
         videoData: videoBuf,
         audioData: audioBuf,
         subtitleBuffers: subPayloads,
+        thumbnailBuffer: thumbBuf,
+        chapterMetadata,
+        metadataInfo,
         trimRange,
         coreJSBlob,
         coreWASMBlob,

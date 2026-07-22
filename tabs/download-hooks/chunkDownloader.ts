@@ -1,6 +1,50 @@
 import type { JobState } from "./types";
 import { buildChunkUrl } from "../../utils/sidx";
 
+let isRefreshingToken = false;
+let tokenRefreshPromise: Promise<void> | null = null;
+
+async function refreshJobStreamUrls(job: JobState): Promise<void> {
+  if (!job.videoId) return;
+  if (isRefreshingToken && tokenRefreshPromise) {
+    return tokenRefreshPromise;
+  }
+
+  isRefreshingToken = true;
+  tokenRefreshPromise = new Promise<void>((resolve, reject) => {
+    console.log("🔄 [HTTP 403 DETECTED] Performing InnerTube re-handshake & stream URL token refresh for video:", job.videoId);
+    if (typeof chrome !== "undefined" && chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: "GET_VIDEO_INFO", videoId: job.videoId }, (response) => {
+        isRefreshingToken = false;
+        if (chrome.runtime.lastError || !response || !response.success || !response.info) {
+          reject(new Error("Token refresh re-handshake failed."));
+          return;
+        }
+
+        const info = response.info;
+        const allFormats = [...(info.formats || []), ...(info.adaptiveFormats || [])];
+        const newVideoFmt = allFormats.find((f: any) => f.url && (f.qualityLabel === job.ext || f.mimeType?.includes(job.ext)));
+        if (newVideoFmt && newVideoFmt.url) {
+          job.url = newVideoFmt.url;
+        }
+        if (job.audioUrl) {
+          const newAudioFmt = (info.adaptiveFormats || []).find((f: any) => f.mimeType?.startsWith("audio/") && f.url);
+          if (newAudioFmt && newAudioFmt.url) {
+            job.audioUrl = newAudioFmt.url;
+          }
+        }
+        console.log("✅ [HTTP 403 RE-HANDSHAKE SUCCESS] Updated stream URLs cleanly!");
+        resolve();
+      });
+    } else {
+      isRefreshingToken = false;
+      reject(new Error("Chrome runtime unavailable for token refresh."));
+    }
+  });
+
+  return tokenRefreshPromise;
+}
+
 export async function fetchChunkWithRetry(
   job: JobState,
   chunkIdx: number,
@@ -8,31 +52,38 @@ export async function fetchChunkWithRetry(
   size: number,
   maxStreamSize?: number
 ): Promise<ArrayBuffer | null> {
-  const limit = maxStreamSize !== undefined ? maxStreamSize : job.totalSize;
-  const start = chunkIdx * size;
-  const end = Math.min((chunkIdx + 1) * size, limit) - 1;
-  const chunkUrl = buildChunkUrl(job.url, start, end);
-
   let attempt = 0;
   const maxAttempts = 5;
 
   while (attempt < maxAttempts) {
     if (job.paused || job.cancelled) return null;
 
+    const limit = maxStreamSize !== undefined ? maxStreamSize : job.totalSize;
+    const start = chunkIdx * size;
+    const end = Math.min((chunkIdx + 1) * size, limit) - 1;
+    const chunkUrl = buildChunkUrl(job.url, start, end);
+
     try {
       const response = await fetch(chunkUrl);
       if (!response.ok) {
         if (response.status === 403) {
-          throw new Error("HTTP 403 Forbidden: YouTube stream URL or deciphered signature expired.");
+          if (attempt < maxAttempts - 1 && job.videoId) {
+            try {
+              await refreshJobStreamUrls(job);
+              attempt++;
+              continue;
+            } catch (_) {}
+          }
+          throw new Error("HTTP 403 Forbidden: YouTube stream URL expired and re-handshake failed.");
         }
         throw new Error(`HTTP Status ${response.status}`);
       }
       return await response.arrayBuffer();
     } catch (err: any) {
       attempt++;
-      if (err.message && err.message.includes("403")) throw err; // Don't retry if forbidden
+      if (err.message && err.message.includes("403")) throw err;
       if (attempt >= maxAttempts) throw err;
-      const delay = 500 * Math.pow(2, attempt - 1); // exponential backoff
+      const delay = 500 * Math.pow(2, attempt - 1);
       await new Promise((r) => setTimeout(r, delay));
     }
   }
@@ -46,9 +97,6 @@ export async function fetchAudioChunkWithRetry(
   size: number
 ): Promise<ArrayBuffer | null> {
   if (!job.audioUrl) return null;
-  const start = chunkIdx * size;
-  const end = Math.min((chunkIdx + 1) * size, job.audioSize || 0) - 1;
-  const chunkUrl = buildChunkUrl(job.audioUrl, start, end);
 
   let attempt = 0;
   const maxAttempts = 5;
@@ -56,18 +104,29 @@ export async function fetchAudioChunkWithRetry(
   while (attempt < maxAttempts) {
     if (job.paused || job.cancelled) return null;
 
+    const start = chunkIdx * size;
+    const end = Math.min((chunkIdx + 1) * size, job.audioSize || 0) - 1;
+    const chunkUrl = buildChunkUrl(job.audioUrl, start, end);
+
     try {
       const response = await fetch(chunkUrl);
       if (!response.ok) {
         if (response.status === 403) {
-          throw new Error("HTTP 403 Forbidden: YouTube audio stream URL or deciphered signature expired.");
+          if (attempt < maxAttempts - 1 && job.videoId) {
+            try {
+              await refreshJobStreamUrls(job);
+              attempt++;
+              continue;
+            } catch (_) {}
+          }
+          throw new Error("HTTP 403 Forbidden: YouTube audio stream URL expired and re-handshake failed.");
         }
         throw new Error(`HTTP Status ${response.status}`);
       }
       return await response.arrayBuffer();
     } catch (err: any) {
       attempt++;
-      if (err.message && err.message.includes("403")) throw err; // Don't retry if forbidden
+      if (err.message && err.message.includes("403")) throw err;
       if (attempt >= maxAttempts) throw err;
       const delay = 500 * Math.pow(2, attempt - 1);
       await new Promise((r) => setTimeout(r, delay));

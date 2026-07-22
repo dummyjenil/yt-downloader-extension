@@ -1,4 +1,6 @@
 import type { StreamFormat, TrimRange } from "../types/youtube";
+import { fetchVideoThumbnailBuffer } from "./thumbnail";
+import { extractChapters, generateFFmpegMetadata } from "./chapters";
 
 export interface ResolvedDownloadParams {
   filename: string;
@@ -69,4 +71,58 @@ export function resolveDownloadParams(
     audioSize: audioSize ? String(audioSize) : "",
     audioExt: audioExt || ""
   };
+}
+
+export interface AuxData {
+  thumbnailBuffer: Uint8Array | null;
+  chapterMetadata: string | undefined;
+  metadataInfo: { title: string; artist: string; album: string } | undefined;
+}
+
+export async function getJobAuxiliaryData(job: any): Promise<AuxData> {
+  let thumbnailBuffer: Uint8Array | null = null;
+  let chapterMetadata: string | undefined = undefined;
+  let metadataInfo: { title: string; artist: string; album: string } | undefined = undefined;
+
+  if (job.videoId) {
+    if (job.embedThumbnail !== false) {
+      try {
+        thumbnailBuffer = await fetchVideoThumbnailBuffer(job.videoId);
+      } catch (err) {
+        console.warn("Failed to fetch video thumbnail buffer:", err);
+      }
+    }
+
+    try {
+      const infoRes = await new Promise<any>((resolve) => {
+        if (typeof chrome !== "undefined" && chrome.runtime) {
+          chrome.runtime.sendMessage({ type: "GET_VIDEO_INFO", videoId: job.videoId }, (r) => {
+            resolve(r && r.success ? r.info : null);
+          });
+        } else {
+          resolve(null);
+        }
+      });
+
+      if (infoRes) {
+        metadataInfo = {
+          title: job.title || infoRes.title || "",
+          artist: infoRes.author || infoRes.ownerChannelName || "YouTube",
+          album: "YouTube Downloads"
+        };
+
+        if (job.embedChapters !== false) {
+          const durationSec = infoRes.lengthSeconds ? parseInt(infoRes.lengthSeconds, 10) : 0;
+          const chapters = extractChapters(infoRes, infoRes.description || "", durationSec);
+          if (chapters.length > 0) {
+            chapterMetadata = generateFFmpegMetadata(job.title, metadataInfo.artist, chapters);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch video info for auxiliary data:", err);
+    }
+  }
+
+  return { thumbnailBuffer, chapterMetadata, metadataInfo };
 }

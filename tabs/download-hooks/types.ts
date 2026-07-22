@@ -39,6 +39,8 @@ export interface JobState {
   // Trim range & multi-subtitle fusion properties
   trimRange?: TrimRange;
   selectedSubtitles?: CaptionTrack[];
+  embedThumbnail?: boolean;
+  embedChapters?: boolean;
 
   // SIDX range metadata
   initRange?: { start: string; end: string };

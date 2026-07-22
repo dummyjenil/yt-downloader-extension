@@ -1,6 +1,7 @@
 import type { TrimRange } from "../../types/youtube";
 import { fetchSidxByteRange } from "../../utils/sidx";
 import { fetchSubtitleBuffers } from "../../utils/subtitle";
+import { getJobAuxiliaryData } from "../../utils/downloadHelpers";
 
 import type { JobState } from "./types";
 import { runFFmpegMerge, mergeChunksToBuffer } from "./ffmpegMerge";
@@ -109,7 +110,8 @@ export async function processSingleStreamDownload(
         });
 
         const subtitleBuffers = await fetchSubtitleBuffers(job.selectedSubtitles, sidxTrimRange);
-        const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, sidxTrimRange, subtitleBuffers);
+        const aux = await getJobAuxiliaryData(job);
+        const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, sidxTrimRange, subtitleBuffers, aux.thumbnailBuffer, aux.chapterMetadata, aux.metadataInfo);
 
         console.log("💾 [processSingleStreamDownload Writing output to disk]", {
           trimmedBufLength: trimmedBuf.byteLength
@@ -206,7 +208,14 @@ export async function processSingleStreamDownload(
 
           job.downloadedChunks.set(chunkIdx, arrayBuffer);
 
-          if (job.trimRange && job.trimRange.enabled) {
+          const requiresPostProcessing = Boolean(
+            (job.trimRange && job.trimRange.enabled) ||
+            (job.selectedSubtitles && job.selectedSubtitles.length > 0) ||
+            job.embedThumbnail !== false ||
+            job.embedChapters !== false
+          );
+
+          if (requiresPostProcessing) {
             job.downloadedBytes = 0;
             for (let i = 0; i < totalChunks; i++) {
               const c = job.downloadedChunks.get(i);
@@ -229,7 +238,18 @@ export async function processSingleStreamDownload(
               const fullBuf = mergeChunksToBuffer(job.downloadedChunks, totalChunks);
               job.downloadedChunks.clear();
               const subtitleBuffers = await fetchSubtitleBuffers(job.selectedSubtitles, job.trimRange);
-              const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, job.trimRange, subtitleBuffers);
+              const aux = await getJobAuxiliaryData(job);
+              const trimmedBuf = await runFFmpegMerge(
+                fullBuf,
+                null,
+                job.ext,
+                undefined,
+                job.trimRange,
+                subtitleBuffers,
+                aux.thumbnailBuffer,
+                aux.chapterMetadata,
+                aux.metadataInfo
+              );
 
               await job.writableStream.write(trimmedBuf);
               await job.writableStream.close();

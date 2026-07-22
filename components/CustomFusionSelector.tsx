@@ -40,6 +40,8 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
   const [selectedVideoIdx, setSelectedVideoIdx] = useState<number>(0);
   const [selectedAudioIdx, setSelectedAudioIdx] = useState<number>(0);
   const [selectedSubtitleCodes, setSelectedSubtitleCodes] = useState<string[]>([]);
+  const [embedThumbnail, setEmbedThumbnail] = useState<boolean>(true);
+  const [embedChapters, setEmbedChapters] = useState<boolean>(true);
 
   const selectedVideo = videoStreams[selectedVideoIdx];
   const selectedAudio = audioStreams[selectedAudioIdx];
@@ -206,6 +208,29 @@ export const CustomFusionSelector: React.FC<CustomFusionSelectorProps> = ({
           </div>
         </div>
       )}
+
+      {/* Advanced Fusion Meta Toggles */}
+      <div className="flex items-center justify-between gap-4 pt-1 border-t border-white/5">
+        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-200 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={embedThumbnail}
+            onChange={(e) => setEmbedThumbnail(e.target.checked)}
+            className="accent-violet-500 rounded cursor-pointer w-4 h-4"
+          />
+          <span>🖼️ Embed Cover Art</span>
+        </label>
+
+        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-200 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={embedChapters}
+            onChange={(e) => setEmbedChapters(e.target.checked)}
+            className="accent-violet-500 rounded cursor-pointer w-4 h-4"
+          />
+          <span>🔖 Embed Video Chapters</span>
+        </label>
+      </div>
 
       {/* Format Mismatch Hint */}
       {!containersMatch && (
