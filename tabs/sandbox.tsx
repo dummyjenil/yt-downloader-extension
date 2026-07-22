@@ -177,6 +177,10 @@ export default function SandboxPage() {
 
         // Subtitle codecs & metadata
         if (subFileNames.length > 0) {
+          for (let i = 0; i < subFileNames.length; i++) {
+            const subInputIndex = audioName ? 2 + i : 1 + i;
+            ffmpegArgs.push("-map", `${subInputIndex}:s:0`);
+          }
           const subCodec = ext === "webm" ? "webvtt" : "mov_text";
           ffmpegArgs.push("-c:s", subCodec);
 

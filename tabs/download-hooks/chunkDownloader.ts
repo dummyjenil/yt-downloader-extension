@@ -21,10 +21,16 @@ export async function fetchChunkWithRetry(
 
     try {
       const response = await fetch(chunkUrl);
-      if (!response.ok) throw new Error(`HTTP Status ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error("HTTP 403 Forbidden: YouTube stream URL or deciphered signature expired.");
+        }
+        throw new Error(`HTTP Status ${response.status}`);
+      }
       return await response.arrayBuffer();
-    } catch (err) {
+    } catch (err: any) {
       attempt++;
+      if (err.message && err.message.includes("403")) throw err; // Don't retry if forbidden
       if (attempt >= maxAttempts) throw err;
       const delay = 500 * Math.pow(2, attempt - 1); // exponential backoff
       await new Promise((r) => setTimeout(r, delay));
@@ -52,10 +58,16 @@ export async function fetchAudioChunkWithRetry(
 
     try {
       const response = await fetch(chunkUrl);
-      if (!response.ok) throw new Error(`HTTP Status ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error("HTTP 403 Forbidden: YouTube audio stream URL or deciphered signature expired.");
+        }
+        throw new Error(`HTTP Status ${response.status}`);
+      }
       return await response.arrayBuffer();
-    } catch (err) {
+    } catch (err: any) {
       attempt++;
+      if (err.message && err.message.includes("403")) throw err; // Don't retry if forbidden
       if (attempt >= maxAttempts) throw err;
       const delay = 500 * Math.pow(2, attempt - 1);
       await new Promise((r) => setTimeout(r, delay));

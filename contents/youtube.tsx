@@ -63,7 +63,7 @@ function YoutubeOverlayContent() {
   // Sync active downloads registry
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.runtime) {
-      chrome.runtime.sendMessage({ type: "GET_ALL_DOWNLOADS" }, (response) => {
+      chrome.runtime.sendMessage({ type: "GET_ACTIVE_DOWNLOADS" }, (response) => {
         if (response && response.downloads) {
           setDownloads(response.downloads);
         }

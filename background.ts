@@ -1,122 +1,12 @@
 import type { VideoInfo } from "./types/youtube";
+import { fetchVideoInfo } from "./background/youtube-video";
+import { setDNRHeadersForClient } from "./background/dnr";
 
-// Explicitly register web request rule to strip 'referer' header for YouTube streaming requests
-function setupDeclarativeNetRules() {
-  const RULE_ID = 1;
-  chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [RULE_ID],
-    addRules: [
-      {
-        id: RULE_ID,
-        priority: 1,
-        action: {
-          type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
-          requestHeaders: [
-            {
-              header: "referer",
-              operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE
-            }
-          ]
-        },
-        condition: {
-          urlFilter: "googlevideo.com",
-          resourceTypes: [
-            chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
-            chrome.declarativeNetRequest.ResourceType.MEDIA,
-            chrome.declarativeNetRequest.ResourceType.OTHER
-          ]
-        }
-      }
-    ]
-  });
-}
-
-// Register rules on install & runtime startup
+// Register DNR rules on install & runtime startup
 chrome.runtime.onInstalled.addListener(() => {
-  setupDeclarativeNetRules();
+  setDNRHeadersForClient("WEB");
 });
-setupDeclarativeNetRules();
-
-async function fetchVideoInfo(videoId: string): Promise<VideoInfo> {
-  const apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
-  const playerUrl = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false&ext_request=true`;
-
-  let visitorData = "";
-  try {
-    const webRes = await fetch(playerUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      },
-      body: JSON.stringify({
-        videoId,
-        context: {
-          client: {
-            clientName: "WEB",
-            clientVersion: "2.20251021.01.00",
-            osName: "Windows",
-            osVersion: "10.0",
-            platform: "DESKTOP"
-          }
-        }
-      })
-    });
-
-    if (webRes.ok) {
-      const webData = await webRes.json();
-      visitorData = webData?.responseContext?.visitorData || "";
-    }
-  } catch (err) {
-    console.warn("Failed to fetch Web visitorData:", err);
-  }
-
-  const vrRes = await fetch(playerUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "User-Agent": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
-    },
-    body: JSON.stringify({
-      videoId,
-      contentCheckOk: true,
-      context: {
-        client: {
-          clientName: "ANDROID_VR",
-          clientVersion: "1.60.19",
-          deviceMake: "Oculus",
-          deviceModel: "Quest 3",
-          osName: "Android",
-          osVersion: "12L",
-          androidSdkVersion: "32",
-          visitorData
-        }
-      }
-    })
-  });
-
-  if (!vrRes.ok) {
-    throw new Error(`YouTube VR Player API HTTP ${vrRes.status}`);
-  }
-
-  const data = await vrRes.json();
-  const videoDetails = data?.videoDetails || {};
-  const streamingData = data?.streamingData || {};
-  const captionTracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
-
-  return {
-    title: videoDetails.title || "YouTube Video",
-    duration: videoDetails.lengthSeconds || "0",
-    lengthSeconds: videoDetails.lengthSeconds || "0",
-    formats: streamingData.formats || [],
-    adaptiveFormats: streamingData.adaptiveFormats || [],
-    captionTracks: captionTracks.map((t: any) => ({
-      baseUrl: t.baseUrl,
-      name: t.name?.simpleText || t.name?.runs?.[0]?.text || "Unknown",
-      code: t.languageCode || "en"
-    }))
-  };
-}
+setDNRHeadersForClient("WEB");
 
 // In-memory active downloads state rehydrated from storage for MV3 lifecycle
 const activeDownloads = new Map<string, any>();
@@ -320,7 +210,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  if (message.type === "GET_ACTIVE_DOWNLOADS") {
+  if (message.type === "GET_ACTIVE_DOWNLOADS" || message.type === "GET_ALL_DOWNLOADS") {
     sendResponse({ downloads: Array.from(activeDownloads.values()) });
     return false;
   }

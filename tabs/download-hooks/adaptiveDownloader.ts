@@ -1,4 +1,4 @@
-import { jsonToWordSrt } from "../../utils/subtitle";
+import { fetchSubtitleBuffers } from "../../utils/subtitle";
 import type { TrimRange } from "../../types/youtube";
 import { fetchSidxByteRange } from "../../utils/sidx";
 
@@ -148,27 +148,7 @@ export async function processAdaptiveDownload(
           aSeek
         };
 
-        const subtitleBuffers: { name: string; code: string; data: Uint8Array }[] = [];
-        if (job.selectedSubtitles && job.selectedSubtitles.length > 0) {
-          for (let i = 0; i < job.selectedSubtitles.length; i++) {
-            const track = job.selectedSubtitles[i];
-            let jsonUrl = track.baseUrl.includes("fmt=") ? track.baseUrl.replace(/fmt=[^&]+/, "fmt=json3") : `${track.baseUrl}&fmt=json3`;
-            try {
-              const res = await fetch(jsonUrl);
-              if (res.ok) {
-                const jsonCaptions = await res.json();
-                const srtContent = jsonToWordSrt(jsonCaptions, job.trimRange);
-                subtitleBuffers.push({
-                  name: `sub_${i}.srt`,
-                  code: track.code || "eng",
-                  data: new TextEncoder().encode(srtContent)
-                });
-              }
-            } catch (err) {
-              console.warn("Failed to fetch subtitle track:", err);
-            }
-          }
-        }
+        const subtitleBuffers = await fetchSubtitleBuffers(job.selectedSubtitles, job.trimRange);
 
         console.log("🎬 [processAdaptiveDownload Calling runFFmpegMerge]", {
           videoBufLength: videoBuf.byteLength,
@@ -368,32 +348,7 @@ export async function processAdaptiveDownload(
     job.adaptiveVideoChunks?.clear();
     job.adaptiveAudioChunks?.clear();
 
-    const subtitleBuffers: { name: string; code: string; data: Uint8Array }[] = [];
-    if (job.selectedSubtitles && job.selectedSubtitles.length > 0) {
-      for (let i = 0; i < job.selectedSubtitles.length; i++) {
-        const track = job.selectedSubtitles[i];
-        let jsonUrl = track.baseUrl;
-        if (jsonUrl.includes("fmt=")) {
-          jsonUrl = jsonUrl.replace(/fmt=[^&]+/, "fmt=json3");
-        } else {
-          jsonUrl = `${jsonUrl}&fmt=json3`;
-        }
-        try {
-          const res = await fetch(jsonUrl);
-          if (res.ok) {
-            const jsonCaptions = await res.json();
-            const srtContent = jsonToWordSrt(jsonCaptions, job.trimRange);
-            subtitleBuffers.push({
-              name: `sub_${i}.srt`,
-              code: track.code || "eng",
-              data: new TextEncoder().encode(srtContent)
-            });
-          }
-        } catch (err) {
-          console.warn("Failed to fetch subtitle track for fusion:", err);
-        }
-      }
-    }
+    const subtitleBuffers = await fetchSubtitleBuffers(job.selectedSubtitles, job.trimRange);
 
     const mergedBuf = await runFFmpegMerge(
       videoBuf,

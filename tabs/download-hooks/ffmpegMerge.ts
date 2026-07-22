@@ -77,6 +77,17 @@ export async function runFFmpegMerge(
 
       if (isTrimming) args.push("-t", String(durationSec));
 
+      const subNames: string[] = [];
+      if (subtitleBuffers && subtitleBuffers.length > 0) {
+        for (let i = 0; i < subtitleBuffers.length; i++) {
+          const sub = subtitleBuffers[i];
+          const subPath = path.join(tmpDir, `_node_tmp_sub_${i}_${Date.now()}.srt`);
+          fs.writeFileSync(subPath, sub.data);
+          subNames.push(subPath);
+          args.push("-i", subPath);
+        }
+      }
+
       if (isAudioOnly) {
         args.push("-map", "0:a:0");
         if (isTrimming || ext === "webm") {
@@ -98,6 +109,16 @@ export async function runFFmpegMerge(
           if (isTrimming) args.push("-c:a", "aac");
           else args.push("-c:a", "copy");
         }
+
+        if (subNames.length > 0) {
+          for (let i = 0; i < subNames.length; i++) {
+            const subInputIndex = aName ? 2 + i : 1 + i;
+            args.push("-map", `${subInputIndex}:s:0`);
+          }
+          const subCodec = ext === "webm" ? "webvtt" : "mov_text";
+          args.push("-c:s", subCodec);
+        }
+
         if (ext === "mp4") args.push("-movflags", "+faststart");
       }
 

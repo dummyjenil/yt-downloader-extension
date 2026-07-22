@@ -22,7 +22,7 @@ export async function setDNRHeadersForClient(clientName: "WEB" | "ANDROID_VR" | 
 
     const rules: chrome.declarativeNetRequest.Rule[] = [
       {
-        id: 1,
+        id: 100,
         priority: 10,
         action: {
           type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
@@ -42,7 +42,7 @@ export async function setDNRHeadersForClient(clientName: "WEB" | "ANDROID_VR" | 
         }
       },
       {
-        id: 2,
+        id: 101,
         priority: 10,
         action: {
           type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
@@ -67,7 +67,7 @@ export async function setDNRHeadersForClient(clientName: "WEB" | "ANDROID_VR" | 
 
     return new Promise<void>((resolve, reject) => {
       chrome.declarativeNetRequest.updateSessionRules({
-        removeRuleIds: [1, 2],
+        removeRuleIds: [100, 101],
         addRules: rules
       }, () => {
         if (chrome.runtime.lastError) {

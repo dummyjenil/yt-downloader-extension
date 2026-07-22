@@ -12,7 +12,7 @@ export function useDownloads() {
         if (res.downloadHistory) setHistoryList(res.downloadHistory as any[]);
       });
 
-      chrome.runtime.sendMessage({ type: "GET_ALL_DOWNLOADS" }, (response) => {
+      chrome.runtime.sendMessage({ type: "GET_ACTIVE_DOWNLOADS" }, (response) => {
         if (response && response.downloads) {
           setDownloads(response.downloads);
         }

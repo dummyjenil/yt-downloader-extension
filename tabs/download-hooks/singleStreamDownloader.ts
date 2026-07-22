@@ -1,5 +1,6 @@
 import type { TrimRange } from "../../types/youtube";
 import { fetchSidxByteRange } from "../../utils/sidx";
+import { fetchSubtitleBuffers } from "../../utils/subtitle";
 
 import type { JobState } from "./types";
 import { runFFmpegMerge, mergeChunksToBuffer } from "./ffmpegMerge";
@@ -107,7 +108,8 @@ export async function processSingleStreamDownload(
           sidxTrimRange
         });
 
-        const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, sidxTrimRange);
+        const subtitleBuffers = await fetchSubtitleBuffers(job.selectedSubtitles, sidxTrimRange);
+        const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, sidxTrimRange, subtitleBuffers);
 
         console.log("💾 [processSingleStreamDownload Writing output to disk]", {
           trimmedBufLength: trimmedBuf.byteLength
@@ -226,7 +228,8 @@ export async function processSingleStreamDownload(
               job.status = "processing" as any;
               const fullBuf = mergeChunksToBuffer(job.downloadedChunks, totalChunks);
               job.downloadedChunks.clear();
-              const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, job.trimRange);
+              const subtitleBuffers = await fetchSubtitleBuffers(job.selectedSubtitles, job.trimRange);
+              const trimmedBuf = await runFFmpegMerge(fullBuf, null, job.ext, undefined, job.trimRange, subtitleBuffers);
 
               await job.writableStream.write(trimmedBuf);
               await job.writableStream.close();

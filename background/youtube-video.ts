@@ -1,7 +1,7 @@
 import { setDNRHeadersForClient } from "./dnr";
 import { decipherSignature } from "../decipherer";
 
-function parseFormatUrl(f: any): string | undefined {
+function parseFormatUrl(f: any, jsCode: string = ""): string | undefined {
   if (f.url) return f.url;
   const cipherStr = f.signatureCipher || f.cipher;
   if (!cipherStr) return undefined;
@@ -15,7 +15,7 @@ function parseFormatUrl(f: any): string | undefined {
     const sp = params.get("sp") || "sig";
 
     if (s) {
-      const deciphered = decipherSignature(s, "");
+      const deciphered = decipherSignature(s, jsCode);
       return `${rawUrl}&${sp}=${encodeURIComponent(deciphered)}`;
     }
     return rawUrl;
@@ -23,6 +23,31 @@ function parseFormatUrl(f: any): string | undefined {
     console.warn("Failed to parse format cipher:", err);
     return undefined;
   }
+}
+
+let cachedPlayerJsCode: string | null = null;
+
+export async function getPlayerJsCode(): Promise<string> {
+  if (cachedPlayerJsCode) return cachedPlayerJsCode;
+  try {
+    const watchRes = await fetch("https://www.youtube.com/iframe_api");
+    if (watchRes.ok) {
+      const text = await watchRes.text();
+      const jsUrlMatch = text.match(/\/s\/player\/[a-zA-Z0-9_-]+\/player_ias\.vflset\/[a-zA-Z_]+\/base\.js/) ||
+                         text.match(/https:\/\/www\.youtube\.com\/s\/player\/[^\s'"]+\/base\.js/);
+      if (jsUrlMatch) {
+        const jsUrl = jsUrlMatch[0].startsWith("http") ? jsUrlMatch[0] : `https://www.youtube.com${jsUrlMatch[0]}`;
+        const jsRes = await fetch(jsUrl);
+        if (jsRes.ok) {
+          cachedPlayerJsCode = await jsRes.text();
+          return cachedPlayerJsCode;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch YouTube player JS:", err);
+  }
+  return "";
 }
 
 let cachedApiKey: string | null = process.env.PLASMO_PUBLIC_YOUTUBE_API_KEY || null;
@@ -201,11 +226,18 @@ export async function fetchVideoInfo(videoId: string) {
         };
       });
 
+      // Check if signature deciphering is needed
+      const rawFormats = streamingData.formats || [];
+      const rawAdaptive = streamingData.adaptiveFormats || [];
+      const hasCipher = rawFormats.some((f: any) => f.signatureCipher || f.cipher) ||
+                        rawAdaptive.some((f: any) => f.signatureCipher || f.cipher);
+      const playerJsCode = hasCipher ? await getPlayerJsCode() : "";
+
       // Extract formats
-      const formats = (streamingData.formats || [])
+      const formats = rawFormats
         .map((f: any) => ({
           itag: f.itag,
-          url: parseFormatUrl(f),
+          url: parseFormatUrl(f, playerJsCode),
           mimeType: f.mimeType,
           qualityLabel: f.qualityLabel,
           contentLength: f.contentLength,
@@ -214,14 +246,14 @@ export async function fetchVideoInfo(videoId: string) {
         }))
         .filter((f: any) => !!f.url);
 
-      const adaptiveFormats = (streamingData.adaptiveFormats || [])
+      const adaptiveFormats = rawAdaptive
         .map((f: any) => {
           const audioTrack = f.audioTrack || {};
           const rawTrackId = audioTrack.id || "";
           const langCode = rawTrackId ? rawTrackId.split(".")[0] : undefined;
           return {
             itag: f.itag,
-            url: parseFormatUrl(f),
+            url: parseFormatUrl(f, playerJsCode),
             mimeType: f.mimeType,
             qualityLabel: f.qualityLabel,
             contentLength: f.contentLength,
