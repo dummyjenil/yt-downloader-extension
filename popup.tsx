@@ -168,16 +168,20 @@ function PopupContent() {
                   videoInfo.adaptiveFormats
                     .filter((f) => f.mimeType.startsWith("audio/"))
                     .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))
-                    .map((stream) => {
+                    .map((stream, idx) => {
                       const isOpus = stream.mimeType.includes("opus");
                       const ext = isOpus ? "webm" : "m4a";
                       const kbps = Math.round((stream.bitrate || 0) / 1000);
                       const sizeMb = stream.contentLength ? (parseInt(stream.contentLength) / 1024 / 1024).toFixed(1) : "?";
+                      const langLabel = stream.displayName || (stream.langCode ? `[${stream.langCode.toUpperCase()}]` : "");
+                      const titleLabel = langLabel ? `${langLabel} • ${ext.toUpperCase()} Audio (${kbps} kbps)` : `${ext.toUpperCase()} Audio (${kbps} kbps)`;
+                      const defaultTag = stream.isDefaultAudio ? " (Default)" : "";
+
                       return (
                         <StreamRow
-                          key={stream.itag}
-                          label={`${ext.toUpperCase()} Audio (${kbps} kbps)`}
-                          meta={`${sizeMb} MB • ${isOpus ? "Opus" : "AAC"}`}
+                          key={`${stream.itag}_${stream.audioTrackId || stream.langCode || idx}`}
+                          label={`${titleLabel}${defaultTag}`}
+                          meta={`${sizeMb} MB • ${isOpus ? "Opus" : "AAC"}${stream.audioTrackId ? ` • Track: ${stream.audioTrackId}` : ""}`}
                           isDownloading={downloads.some(d => d.url === stream.url && (d.status === "downloading" || d.status === "paused"))}
                           onDownload={() =>
                             handleDownload(videoInfo, stream, "audio", trimRange, undefined, undefined, () => setNavTab("dashboard"))
