@@ -1,11 +1,12 @@
-import React from "react";
-import { useTheme } from "../context/ThemeContext";
+import React from "react"
+
+import { useTheme } from "../context/ThemeContext"
 
 interface UrlFormProps {
-  urlInput: string;
-  setUrlInput: (val: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
-  loading: boolean;
+  urlInput: string
+  setUrlInput: (val: string) => void
+  onSubmit: (e: React.FormEvent) => void
+  loading: boolean
 }
 
 export const UrlForm: React.FC<UrlFormProps> = ({
@@ -14,7 +15,7 @@ export const UrlForm: React.FC<UrlFormProps> = ({
   onSubmit,
   loading
 }) => {
-  const { themeConfig } = useTheme();
+  const { themeConfig } = useTheme()
 
   return (
     <form onSubmit={onSubmit} className="flex gap-2.5 mb-5">
@@ -29,10 +30,9 @@ export const UrlForm: React.FC<UrlFormProps> = ({
       <button
         type="submit"
         disabled={loading}
-        className={`${themeConfig.primaryBtn} ${themeConfig.radius} px-5 py-3 text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-      >
+        className={`${themeConfig.primaryBtn} ${themeConfig.radius} px-5 py-3 text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed`}>
         {loading ? "Fetching..." : "Fetch"}
       </button>
     </form>
-  );
-};
+  )
+}

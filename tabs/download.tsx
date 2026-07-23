@@ -1,15 +1,19 @@
-import React, { useState } from "react";
-import { ThemeProvider, useTheme } from "../context/ThemeContext";
-import { useDownloadManager } from "./download-hooks/useDownloadManager";
-import { Header } from "./download-components/Header";
-import { ActiveDownloadsTab } from "./download-components/ActiveDownloadsTab";
-import { SettingsTab } from "./download-components/SettingsTab";
-import { HistoryTab } from "./download-components/HistoryTab";
-import "../styles/globals.css";
+import React, { useState } from "react"
+
+import { ThemeProvider, useTheme } from "../context/ThemeContext"
+import { ActiveDownloadsTab } from "./download-components/ActiveDownloadsTab"
+import { Header } from "./download-components/Header"
+import { HistoryTab } from "./download-components/HistoryTab"
+import { SettingsTab } from "./download-components/SettingsTab"
+import { useDownloadManager } from "./download-hooks/useDownloadManager"
+
+import "../styles/globals.css"
 
 function DownloadPageContent() {
-  const [activeTab, setActiveTab] = useState<"downloads" | "settings" | "history">("downloads");
-  const { themeConfig } = useTheme();
+  const [activeTab, setActiveTab] = useState<
+    "downloads" | "settings" | "history"
+  >("downloads")
+  const { themeConfig } = useTheme()
 
   const {
     jobList,
@@ -17,6 +21,7 @@ function DownloadPageContent() {
     concurrency,
     maxConcurrentJobs,
     saveMode,
+    preferredClient,
     defaultDirName,
     dirPermission,
     historyList,
@@ -30,16 +35,13 @@ function DownloadPageContent() {
     cancelJob,
     clearHistory,
     updateSetting
-  } = useDownloadManager();
+  } = useDownloadManager()
 
   return (
-    <div className={`flex flex-col min-h-screen font-sans ${themeConfig.container} transition-colors duration-200 m-0 p-0`}>
+    <div
+      className={`flex flex-col min-h-screen font-sans ${themeConfig.container} transition-colors duration-200 m-0 p-0`}>
       {/* Hidden FFmpeg Sandbox Iframe */}
-      <iframe
-        id="ffmpeg-sandbox"
-        src="sandbox.html"
-        className="hidden"
-      />
+      <iframe id="ffmpeg-sandbox" src="sandbox.html" className="hidden" />
 
       {/* Premium Navigation Header */}
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -68,6 +70,7 @@ function DownloadPageContent() {
             concurrency={concurrency}
             maxConcurrentJobs={maxConcurrentJobs}
             saveMode={saveMode}
+            preferredClient={preferredClient}
             defaultDirName={defaultDirName}
             handleSelectDirectory={handleSelectDirectory}
             handleClearDirectory={handleClearDirectory}
@@ -76,14 +79,11 @@ function DownloadPageContent() {
         )}
 
         {activeTab === "history" && (
-          <HistoryTab
-            historyList={historyList}
-            clearHistory={clearHistory}
-          />
+          <HistoryTab historyList={historyList} clearHistory={clearHistory} />
         )}
       </main>
     </div>
-  );
+  )
 }
 
 export default function DownloadPage() {
@@ -91,5 +91,5 @@ export default function DownloadPage() {
     <ThemeProvider>
       <DownloadPageContent />
     </ThemeProvider>
-  );
+  )
 }

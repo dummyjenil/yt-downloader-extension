@@ -1,73 +1,122 @@
-import { useEffect, useState, useRef } from "react";
-import { getDirectoryHandle, storeDirectoryHandle, clearDirectoryHandle } from "../../utils/storage";
-import type { TrimRange, CaptionTrack } from "../../types/youtube";
+import { useEffect, useRef, useState } from "react"
 
-import type { JobState } from "./types";
-import { setupAndStartJob, startJobDownload } from "./jobRunner";
+import type { CaptionTrack, TrimRange } from "../../types/youtube"
+import {
+  clearDirectoryHandle,
+  getDirectoryHandle,
+  storeDirectoryHandle
+} from "../../utils/storage"
+import { setupAndStartJob, startJobDownload } from "./jobRunner"
+import type { JobState } from "./types"
 
-export type { JobState };
+export type { JobState }
+export type SaveMode = "directory" | "browser"
 
 export function useDownloadManager() {
-  const [jobList, setJobList] = useState<JobState[]>([]);
-  const [chunkSize, setChunkSize] = useState<number>(5 * 1024 * 1024);
-  const [concurrency, setConcurrency] = useState<number>(3);
-  const [maxConcurrentJobs, setMaxConcurrentJobs] = useState<number>(3);
-  const [saveMode, setSaveMode] = useState<SaveMode>("directory");
-  const [defaultDirName, setDefaultDirName] = useState<string | null>(null);
-  const [dirPermission, setDirPermission] = useState<string | null>(null);
-  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [jobList, setJobList] = useState<JobState[]>([])
+  const [chunkSize, setChunkSize] = useState<number>(5 * 1024 * 1024)
+  const [concurrency, setConcurrency] = useState<number>(3)
+  const [maxConcurrentJobs, setMaxConcurrentJobs] = useState<number>(3)
+  const [saveMode, setSaveMode] = useState<SaveMode>("directory")
+  const [preferredClient, setPreferredClient] = useState<string>("AUTO")
+  const [defaultDirName, setDefaultDirName] = useState<string | null>(null)
+  const [dirPermission, setDirPermission] = useState<string | null>(null)
+  const [historyList, setHistoryList] = useState<any[]>([])
 
-  const jobsRef = useRef<Map<string, JobState>>(new Map());
-  const chunkSizeRef = useRef(chunkSize);
-  const concurrencyRef = useRef(concurrency);
-  const maxConcurrentJobsRef = useRef(maxConcurrentJobs);
-  const saveModeRef = useRef(saveMode);
+  const jobsRef = useRef<Map<string, JobState>>(new Map())
+  const chunkSizeRef = useRef(chunkSize)
+  const concurrencyRef = useRef(concurrency)
+  const maxConcurrentJobsRef = useRef(maxConcurrentJobs)
+  const saveModeRef = useRef(saveMode)
 
-  useEffect(() => { chunkSizeRef.current = chunkSize; }, [chunkSize]);
-  useEffect(() => { concurrencyRef.current = concurrency; }, [concurrency]);
-  useEffect(() => { maxConcurrentJobsRef.current = maxConcurrentJobs; }, [maxConcurrentJobs]);
-  useEffect(() => { saveModeRef.current = saveMode; }, [saveMode]);
+  useEffect(() => {
+    chunkSizeRef.current = chunkSize
+  }, [chunkSize])
+  useEffect(() => {
+    concurrencyRef.current = concurrency
+  }, [concurrency])
+  useEffect(() => {
+    maxConcurrentJobsRef.current = maxConcurrentJobs
+  }, [maxConcurrentJobs])
+  useEffect(() => {
+    saveModeRef.current = saveMode
+  }, [saveMode])
 
   // Load Settings and History on mount
   useEffect(() => {
-    chrome.storage.local.get(["chunkSize", "concurrency", "maxConcurrentJobs", "saveMode", "downloadHistory"], (res) => {
-      if (res.chunkSize) setChunkSize(res.chunkSize as number);
-      if (res.concurrency) setConcurrency(res.concurrency as number);
-      if (res.maxConcurrentJobs) setMaxConcurrentJobs(res.maxConcurrentJobs as number);
-      if (res.saveMode) setSaveMode(res.saveMode as SaveMode);
-      if (res.downloadHistory) setHistoryList(res.downloadHistory as any[]);
-    });
-
-    getDirectoryHandle().then((handle) => {
-      if (handle) {
-        setDefaultDirName(handle.name);
-        (handle as any).queryPermission({ mode: "readwrite" }).then((perm: string) => {
-          setDirPermission(perm);
-        }).catch(console.error);
+    chrome.storage.local.get(
+      [
+        "chunkSize",
+        "concurrency",
+        "maxConcurrentJobs",
+        "saveMode",
+        "preferred_client",
+        "downloadHistory"
+      ],
+      (res) => {
+        if (res.chunkSize) setChunkSize(res.chunkSize as number)
+        if (res.concurrency) setConcurrency(res.concurrency as number)
+        if (res.maxConcurrentJobs)
+          setMaxConcurrentJobs(res.maxConcurrentJobs as number)
+        if (res.saveMode) setSaveMode(res.saveMode as SaveMode)
+        if (res.preferred_client)
+          setPreferredClient(res.preferred_client as string)
+        if (res.downloadHistory) setHistoryList(res.downloadHistory as any[])
       }
-    }).catch(console.error);
+    )
+
+    getDirectoryHandle()
+      .then((handle) => {
+        if (handle) {
+          setDefaultDirName(handle.name)
+          ;(handle as any)
+            .queryPermission({ mode: "readwrite" })
+            .then((perm: string) => {
+              setDirPermission(perm)
+            })
+            .catch(console.error)
+        }
+      })
+      .catch(console.error)
 
     const uiInterval = setInterval(() => {
-      setJobList(Array.from(jobsRef.current.values()));
-    }, 400);
+      setJobList(Array.from(jobsRef.current.values()))
+    }, 400)
 
-    return () => clearInterval(uiInterval);
-  }, []);
+    return () => clearInterval(uiInterval)
+  }, [])
 
   // Listen for background relay commands
   useEffect(() => {
     const messageListener = (message: any, sender: any, sendResponse: any) => {
       if (message.type === "PAUSE_DOWNLOAD") {
-        pauseJob(message.id);
-        sendResponse({ success: true });
+        pauseJob(message.id)
+        sendResponse({ success: true })
       } else if (message.type === "RESUME_DOWNLOAD") {
-        resumeJob(message.id);
-        sendResponse({ success: true });
+        resumeJob(message.id)
+        sendResponse({ success: true })
       } else if (message.type === "CANCEL_DOWNLOAD") {
-        cancelJob(message.id);
-        sendResponse({ success: true });
+        cancelJob(message.id)
+        sendResponse({ success: true })
       } else if (message.type === "NEW_DOWNLOAD_JOB") {
-        const { url, videoId, title, ext, contentLength, audioUrl, audioSize, audioExt, initRange, indexRange, audioInitRange, audioIndexRange, trimRange, selectedSubtitles, embedThumbnail, embedChapters } = message;
+        const {
+          url,
+          videoId,
+          title,
+          ext,
+          contentLength,
+          audioUrl,
+          audioSize,
+          audioExt,
+          initRange,
+          indexRange,
+          audioInitRange,
+          audioIndexRange,
+          trimRange,
+          selectedSubtitles,
+          embedThumbnail,
+          embedChapters
+        } = message
         addNewJob(
           url,
           title,
@@ -85,20 +134,20 @@ export function useDownloadManager() {
           videoId,
           embedThumbnail,
           embedChapters
-        );
-        sendResponse({ success: true });
+        )
+        sendResponse({ success: true })
       }
-    };
-    chrome.runtime.onMessage.addListener(messageListener);
-    return () => chrome.runtime.onMessage.removeListener(messageListener);
-  }, []);
+    }
+    chrome.runtime.onMessage.addListener(messageListener)
+    return () => chrome.runtime.onMessage.removeListener(messageListener)
+  }, [])
 
   // Handle pending download job from storage or URL parameters on initial tab load
   useEffect(() => {
     chrome.storage.local.get(["pendingDownloadJob"], (res) => {
       if (res.pendingDownloadJob) {
-        const p = res.pendingDownloadJob;
-        chrome.storage.local.remove(["pendingDownloadJob"]);
+        const p: any = res.pendingDownloadJob
+        chrome.storage.local.remove(["pendingDownloadJob"])
         setTimeout(() => {
           addNewJob(
             p.url,
@@ -114,44 +163,55 @@ export function useDownloadManager() {
             p.audioIndexRange,
             p.trimRange,
             p.selectedSubtitles
-          );
-        }, 300);
-        return;
+          )
+        }, 300)
+        return
       }
 
       // Fallback for direct URL parameter navigation
-      const urlParams = new URLSearchParams(window.location.search);
-      const url = urlParams.get("url") || "";
-      const title = urlParams.get("title") || "video";
-      const ext = urlParams.get("ext") || "mp4";
-      const contentLengthStr = urlParams.get("contentLength") || "0";
-      const totalSize = parseInt(contentLengthStr, 10);
-      const audioUrl = urlParams.get("audioUrl") || undefined;
-      const audioSizeStr = urlParams.get("audioSize") || "";
-      const audioSize = audioSizeStr ? parseInt(audioSizeStr, 10) : undefined;
-      const audioExt = urlParams.get("audioExt") || undefined;
-      const trimStart = urlParams.get("trimStart");
-      const trimEnd = urlParams.get("trimEnd");
-      const trimRange = (trimStart && trimEnd) ? { enabled: true, startTimeSec: parseFloat(trimStart), endTimeSec: parseFloat(trimEnd) } : undefined;
-      const subtitlesStr = urlParams.get("subtitles");
-      let selectedSubtitles: CaptionTrack[] | undefined = undefined;
+      const urlParams = new URLSearchParams(window.location.search)
+      const url = urlParams.get("url") || ""
+      const title = urlParams.get("title") || "video"
+      const ext = urlParams.get("ext") || "mp4"
+      const contentLengthStr = urlParams.get("contentLength") || "0"
+      const totalSize = parseInt(contentLengthStr, 10)
+      const audioUrl = urlParams.get("audioUrl") || undefined
+      const audioSizeStr = urlParams.get("audioSize") || ""
+      const audioSize = audioSizeStr ? parseInt(audioSizeStr, 10) : undefined
+      const audioExt = urlParams.get("audioExt") || undefined
+      const trimStart = urlParams.get("trimStart")
+      const trimEnd = urlParams.get("trimEnd")
+      const trimRange =
+        trimStart && trimEnd
+          ? {
+              enabled: true,
+              startTimeSec: parseFloat(trimStart),
+              endTimeSec: parseFloat(trimEnd)
+            }
+          : undefined
+      const subtitlesStr = urlParams.get("subtitles")
+      let selectedSubtitles: CaptionTrack[] | undefined = undefined
       if (subtitlesStr) {
         try {
-          selectedSubtitles = JSON.parse(subtitlesStr);
+          selectedSubtitles = JSON.parse(subtitlesStr)
         } catch (e) {
-          console.warn("Failed to parse subtitles query parameter:", e);
+          console.warn("Failed to parse subtitles query parameter:", e)
         }
       }
 
-      const initRangeStr = urlParams.get("initRange");
-      const indexRangeStr = urlParams.get("indexRange");
-      const audioInitRangeStr = urlParams.get("audioInitRange");
-      const audioIndexRangeStr = urlParams.get("audioIndexRange");
+      const initRangeStr = urlParams.get("initRange")
+      const indexRangeStr = urlParams.get("indexRange")
+      const audioInitRangeStr = urlParams.get("audioInitRange")
+      const audioIndexRangeStr = urlParams.get("audioIndexRange")
 
-      const initRange = initRangeStr ? JSON.parse(initRangeStr) : undefined;
-      const indexRange = indexRangeStr ? JSON.parse(indexRangeStr) : undefined;
-      const audioInitRange = audioInitRangeStr ? JSON.parse(audioInitRangeStr) : undefined;
-      const audioIndexRange = audioIndexRangeStr ? JSON.parse(audioIndexRangeStr) : undefined;
+      const initRange = initRangeStr ? JSON.parse(initRangeStr) : undefined
+      const indexRange = indexRangeStr ? JSON.parse(indexRangeStr) : undefined
+      const audioInitRange = audioInitRangeStr
+        ? JSON.parse(audioInitRangeStr)
+        : undefined
+      const audioIndexRange = audioIndexRangeStr
+        ? JSON.parse(audioIndexRangeStr)
+        : undefined
 
       if (url) {
         setTimeout(() => {
@@ -169,49 +229,55 @@ export function useDownloadManager() {
             audioIndexRange,
             trimRange,
             selectedSubtitles
-          );
-        }, 300);
+          )
+        }, 300)
       }
-    });
-  }, []);
+    })
+  }, [])
 
   const requestDirPermission = async () => {
     try {
-      const handle = await getDirectoryHandle();
+      const handle = await getDirectoryHandle()
       if (handle) {
-        const perm = await (handle as any).requestPermission({ mode: "readwrite" });
-        setDirPermission(perm);
+        const perm = await (handle as any).requestPermission({
+          mode: "readwrite"
+        })
+        setDirPermission(perm)
         if (perm === "granted") {
-          processQueue();
+          processQueue()
         }
       }
     } catch (err: any) {
-      console.error("Failed to request directory permission:", err);
-      alert("Failed to grant permission: " + err.message);
+      console.error("Failed to request directory permission:", err)
+      alert("Failed to grant permission: " + err.message)
     }
-  };
+  }
 
   const handleSelectDirectory = async () => {
     try {
       if (!(window as any).showDirectoryPicker) {
-        alert("Your browser does not support directory picking. Please use Google Chrome.");
-        return;
+        alert(
+          "Your browser does not support directory picking. Please use Google Chrome."
+        )
+        return
       }
-      const handle = await (window as any).showDirectoryPicker({ mode: "readwrite" });
-      await storeDirectoryHandle(handle);
-      setDefaultDirName(handle.name);
-      setDirPermission("granted");
+      const handle = await (window as any).showDirectoryPicker({
+        mode: "readwrite"
+      })
+      await storeDirectoryHandle(handle)
+      setDefaultDirName(handle.name)
+      setDirPermission("granted")
     } catch (err: any) {
-      console.error(err);
-      alert("Failed to select directory: " + err.message);
+      console.error(err)
+      alert("Failed to select directory: " + err.message)
     }
-  };
+  }
 
   const handleClearDirectory = async () => {
-    await clearDirectoryHandle();
-    setDefaultDirName(null);
-    setDirPermission(null);
-  };
+    await clearDirectoryHandle()
+    setDefaultDirName(null)
+    setDirPermission(null)
+  }
 
   const addNewJob = async (
     url: string,
@@ -231,8 +297,8 @@ export function useDownloadManager() {
     embedThumbnail?: boolean,
     embedChapters?: boolean
   ) => {
-    const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_");
-    const jobId = `job_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_")
+    const jobId = `job_${Date.now()}_${Math.floor(Math.random() * 1000)}`
 
     const newJob: JobState = {
       id: jobId,
@@ -240,7 +306,7 @@ export function useDownloadManager() {
       videoId,
       title: cleanTitle,
       ext,
-      totalSize: (totalSize || 0) + (audioUrl ? (audioSize || 0) : 0),
+      totalSize: (totalSize || 0) + (audioUrl ? audioSize || 0 : 0),
       downloadedBytes: 0,
       percent: 0,
       speed: 0,
@@ -266,30 +332,34 @@ export function useDownloadManager() {
       selectedSubtitles,
       embedThumbnail: embedThumbnail !== undefined ? embedThumbnail : true,
       embedChapters: embedChapters !== undefined ? embedChapters : true
-    };
+    }
 
-    jobsRef.current.set(jobId, newJob);
-    setJobList(Array.from(jobsRef.current.values()));
+    jobsRef.current.set(jobId, newJob)
+    setJobList(Array.from(jobsRef.current.values()))
 
-    processQueue();
-  };
+    processQueue()
+  }
 
   const processQueue = async () => {
-    const jobs = Array.from(jobsRef.current.values());
-    const downloadingCount = jobs.filter(j => j.status === "downloading").length;
+    const jobs = Array.from(jobsRef.current.values())
+    const downloadingCount = jobs.filter(
+      (j) => j.status === "downloading"
+    ).length
 
-    const limit = maxConcurrentJobsRef.current;
+    const limit = maxConcurrentJobsRef.current
     if (downloadingCount < limit) {
-      const nextJob = jobs.find(j => j.status === "idle" && !j.paused && !j.cancelled);
+      const nextJob = jobs.find(
+        (j) => j.status === "idle" && !j.paused && !j.cancelled
+      )
       if (nextJob) {
-        startSetup(nextJob.id);
+        startSetup(nextJob.id)
       }
     }
-  };
+  }
 
   const startSetup = async (jobId: string) => {
-    const job = jobsRef.current.get(jobId);
-    if (!job) return;
+    const job = jobsRef.current.get(jobId)
+    if (!job) return
 
     setupAndStartJob(
       job,
@@ -301,81 +371,99 @@ export function useDownloadManager() {
       refreshHistory,
       processQueue,
       saveModeRef
-    );
-  };
+    )
+  }
 
   const pauseJob = (jobId: string) => {
-    const job = jobsRef.current.get(jobId);
+    const job = jobsRef.current.get(jobId)
     if (job && job.status === "downloading") {
-      job.paused = true;
-      job.status = "paused";
-      chrome.runtime.sendMessage({ type: "TAB_DOWNLOAD_PAUSE_STATE", id: jobId, isPaused: true });
-      processQueue();
+      job.paused = true
+      job.status = "paused"
+      chrome.runtime.sendMessage({
+        type: "TAB_DOWNLOAD_PAUSE_STATE",
+        id: jobId,
+        isPaused: true
+      })
+      processQueue()
     }
-  };
+  }
 
   const resumeJob = (jobId: string) => {
-    const job = jobsRef.current.get(jobId);
+    const job = jobsRef.current.get(jobId)
     if (job && job.status === "paused") {
-      job.paused = false;
-      job.status = "downloading";
-      job.startedTime = Date.now();
-      job.speedHistory = [{ time: Date.now(), bytes: job.downloadedBytes }];
-      chrome.runtime.sendMessage({ type: "TAB_DOWNLOAD_PAUSE_STATE", id: jobId, isPaused: false });
+      job.paused = false
+      job.status = "downloading"
+      job.startedTime = Date.now()
+      job.speedHistory = [{ time: Date.now(), bytes: job.downloadedBytes }]
+      chrome.runtime.sendMessage({
+        type: "TAB_DOWNLOAD_PAUSE_STATE",
+        id: jobId,
+        isPaused: false
+      })
       startJobDownload(
         job,
         chunkSizeRef.current,
         concurrencyRef.current,
         refreshHistory,
         processQueue
-      );
+      )
     }
-  };
+  }
 
   const cancelJob = async (jobId: string) => {
-    const job = jobsRef.current.get(jobId);
+    const job = jobsRef.current.get(jobId)
     if (job) {
-      job.cancelled = true;
+      job.cancelled = true
       try {
-        await job.writableStream.abort();
-      } catch (_) { }
-      chrome.runtime.sendMessage({ type: "TAB_DOWNLOAD_CANCELLED", id: jobId });
-      jobsRef.current.delete(jobId);
-      setJobList(Array.from(jobsRef.current.values()));
-      processQueue();
+        await job.writableStream.abort()
+      } catch (_) {}
+      chrome.runtime.sendMessage({ type: "TAB_DOWNLOAD_CANCELLED", id: jobId })
+      jobsRef.current.delete(jobId)
+      setJobList(Array.from(jobsRef.current.values()))
+      processQueue()
     }
-  };
+  }
 
   const refreshHistory = () => {
     chrome.storage.local.get(["downloadHistory"], (res) => {
-      if (res.downloadHistory) setHistoryList(res.downloadHistory as any[]);
-    });
-  };
+      if (res.downloadHistory) setHistoryList(res.downloadHistory as any[])
+    })
+  }
 
   const clearHistory = () => {
     chrome.storage.local.set({ downloadHistory: [] }, () => {
-      setHistoryList([]);
-    });
-  };
+      setHistoryList([])
+    })
+  }
 
-  const updateSetting = (key: "chunkSize" | "concurrency" | "maxConcurrentJobs" | "saveMode", val: any) => {
+  const updateSetting = (
+    key:
+      | "chunkSize"
+      | "concurrency"
+      | "maxConcurrentJobs"
+      | "saveMode"
+      | "preferred_client",
+    val: any
+  ) => {
     if (key === "chunkSize") {
-      setChunkSize(val);
+      setChunkSize(val)
     } else if (key === "concurrency") {
-      setConcurrency(val);
+      setConcurrency(val)
     } else if (key === "maxConcurrentJobs") {
-      setMaxConcurrentJobs(val);
+      setMaxConcurrentJobs(val)
     } else if (key === "saveMode") {
-      setSaveMode(val);
+      setSaveMode(val)
+    } else if (key === "preferred_client") {
+      setPreferredClient(val)
     }
-    chrome.storage.local.set({ [key]: val });
-  };
+    chrome.storage.local.set({ [key]: val })
+  }
 
   const clearJob = (jobId: string) => {
-    jobsRef.current.delete(jobId);
-    setJobList(Array.from(jobsRef.current.values()));
-    chrome.runtime.sendMessage({ type: "CLEAR_DOWNLOAD", id: jobId });
-  };
+    jobsRef.current.delete(jobId)
+    setJobList(Array.from(jobsRef.current.values()))
+    chrome.runtime.sendMessage({ type: "CLEAR_DOWNLOAD", id: jobId })
+  }
 
   return {
     jobList,
@@ -383,6 +471,7 @@ export function useDownloadManager() {
     concurrency,
     maxConcurrentJobs,
     saveMode,
+    preferredClient,
     defaultDirName,
     dirPermission,
     historyList,
@@ -396,5 +485,5 @@ export function useDownloadManager() {
     cancelJob,
     clearHistory,
     updateSetting
-  };
+  }
 }
