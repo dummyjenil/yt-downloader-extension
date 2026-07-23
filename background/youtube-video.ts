@@ -251,27 +251,46 @@ export async function fetchVideoInfo(videoId: string) {
         })
         .filter((f: any) => !!f.url)
 
-      // Fetch multi-language audio tracks via WEB page HTML
+      // Fetch multi-language audio tracks via WEB API / HTML page
       let audioLanguages:
         { code: string; name: string; isDefault: boolean }[] | undefined
       let hasMultiLanguageAudio = false
       try {
-        const multiLangResult = await fetchMultiLanguageAudioTracks(videoId)
-        if (
-          multiLangResult.hasMultiLanguageAudio &&
-          multiLangResult.audioStreams.length > 0
-        ) {
+        const multiLangResult = await fetchMultiLanguageAudioTracks(
+          videoId,
+          apiKey,
+          visitorData
+        )
+
+        // Set language info if multi-language detected
+        if (multiLangResult.hasMultiLanguageAudio) {
           audioLanguages = multiLangResult.languages
           hasMultiLanguageAudio = true
+        }
 
-          // Merge multi-lang audio streams into adaptiveFormats (avoid duplicates by itag+langCode)
+        // Merge only streams that have URLs (for downloading)
+        const streamsWithUrls = multiLangResult.audioStreams.filter(
+          (s) => !!s.url
+        )
+        if (streamsWithUrls.length > 0) {
+          // Collect existing audio keys from ANDROID_VR/TV response
           const existingAudioKeys = new Set(
             adaptiveFormats
               .filter((f: any) => f.mimeType?.startsWith("audio/"))
               .map((f: any) => `${f.itag}_${f.langCode || "und"}`)
           )
 
-          for (const mlStream of multiLangResult.audioStreams) {
+          // Remove default-only audio streams if we have richer multi-lang data
+          if (multiLangResult.hasMultiLanguageAudio) {
+            const nonAudioFormats = adaptiveFormats.filter(
+              (f: any) => !f.mimeType?.startsWith("audio/")
+            )
+            adaptiveFormats.length = 0
+            adaptiveFormats.push(...nonAudioFormats)
+            existingAudioKeys.clear()
+          }
+
+          for (const mlStream of streamsWithUrls) {
             const key = `${mlStream.itag}_${mlStream.langCode || "und"}`
             if (!existingAudioKeys.has(key)) {
               adaptiveFormats.push({
@@ -290,11 +309,11 @@ export async function fetchVideoInfo(videoId: string) {
               existingAudioKeys.add(key)
             }
           }
-
-          console.log(
-            `Merged ${multiLangResult.audioStreams.length} multi-language audio tracks (${audioLanguages.length} languages)`
-          )
         }
+
+        console.log(
+          `[MultiLang] Detected ${multiLangResult.languages.length} languages, multiLang=${multiLangResult.hasMultiLanguageAudio}, streamsWithUrls=${streamsWithUrls.length}`
+        )
       } catch (err: any) {
         console.warn(
           "Multi-language audio detection failed (non-fatal):",

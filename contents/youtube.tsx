@@ -191,7 +191,7 @@ function YoutubeOverlayContent() {
         .sendMessage({
           type: "ADD_DOWNLOAD_JOB",
           url: stream.url,
-          videoId: videoInfo.videoId || videoId,
+          videoId: videoId,
           title: filename,
           ext: ext,
           contentLength: scaledContentLength || "",
