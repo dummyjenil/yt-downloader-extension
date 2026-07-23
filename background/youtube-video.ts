@@ -1,84 +1,64 @@
-import { setDNRHeadersForClient } from "./dnr";
-import { decipherSignature } from "../decipherer";
+import { decipherSignature, getPlayerJsCode } from "../decipherer"
+import { setDNRHeadersForClient } from "./dnr"
+import { fetchMultiLanguageAudioTracks } from "./multi-lang-audio"
 
 function parseFormatUrl(f: any, jsCode: string = ""): string | undefined {
-  if (f.url) return f.url;
-  const cipherStr = f.signatureCipher || f.cipher;
-  if (!cipherStr) return undefined;
-  
-  try {
-    const params = new URLSearchParams(cipherStr);
-    const rawUrl = params.get("url");
-    if (!rawUrl) return undefined;
+  if (f.url) return f.url
+  const cipherStr = f.signatureCipher || f.cipher
+  if (!cipherStr) return undefined
 
-    const s = params.get("s");
-    const sp = params.get("sp") || "sig";
+  try {
+    const params = new URLSearchParams(cipherStr)
+    const rawUrl = params.get("url")
+    if (!rawUrl) return undefined
+
+    const s = params.get("s")
+    const sp = params.get("sp") || "sig"
 
     if (s) {
-      const deciphered = decipherSignature(s, jsCode);
-      return `${rawUrl}&${sp}=${encodeURIComponent(deciphered)}`;
+      const deciphered = decipherSignature(s, jsCode)
+      return `${rawUrl}&${sp}=${encodeURIComponent(deciphered)}`
     }
-    return rawUrl;
+    return rawUrl
   } catch (err) {
-    console.warn("Failed to parse format cipher:", err);
-    return undefined;
+    console.warn("Failed to parse format cipher:", err)
+    return undefined
   }
 }
 
-let cachedPlayerJsCode: string | null = null;
-
-export async function getPlayerJsCode(): Promise<string> {
-  if (cachedPlayerJsCode) return cachedPlayerJsCode;
-  try {
-    const watchRes = await fetch("https://www.youtube.com/iframe_api");
-    if (watchRes.ok) {
-      const text = await watchRes.text();
-      const jsUrlMatch = text.match(/\/s\/player\/[a-zA-Z0-9_-]+\/player_ias\.vflset\/[a-zA-Z_]+\/base\.js/) ||
-                         text.match(/https:\/\/www\.youtube\.com\/s\/player\/[^\s'"]+\/base\.js/);
-      if (jsUrlMatch) {
-        const jsUrl = jsUrlMatch[0].startsWith("http") ? jsUrlMatch[0] : `https://www.youtube.com${jsUrlMatch[0]}`;
-        const jsRes = await fetch(jsUrl);
-        if (jsRes.ok) {
-          cachedPlayerJsCode = await jsRes.text();
-          return cachedPlayerJsCode;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("Failed to fetch YouTube player JS:", err);
-  }
-  return "";
-}
-
-let cachedApiKey: string | null = process.env.PLASMO_PUBLIC_YOUTUBE_API_KEY || null;
+let cachedApiKey: string | null =
+  process.env.PLASMO_PUBLIC_YOUTUBE_API_KEY || null
 
 export async function getApiKey(): Promise<string> {
   if (cachedApiKey) {
-    return cachedApiKey;
+    return cachedApiKey
   }
   try {
-    const response = await fetch("https://www.youtube.com/app_shell");
+    const response = await fetch("https://www.youtube.com/app_shell")
     if (!response.ok) {
-      throw new Error(`Failed to fetch app_shell: ${response.status}`);
+      throw new Error(`Failed to fetch app_shell: ${response.status}`)
     }
-    const text = await response.text();
-    const match = text.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/) || text.match(/INNERTUBE_API_KEY":"([^"]+)"/) || text.match(/INNERTUBE_API_KEY":"(.*?)","?/);
+    const text = await response.text()
+    const match =
+      text.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/) ||
+      text.match(/INNERTUBE_API_KEY":"([^"]+)"/) ||
+      text.match(/INNERTUBE_API_KEY":"(.*?)","?/)
     if (match && match[1]) {
-      cachedApiKey = match[1];
-      return cachedApiKey;
+      cachedApiKey = match[1]
+      return cachedApiKey
     }
-    throw new Error("INNERTUBE_API_KEY not found in app_shell response");
+    throw new Error("INNERTUBE_API_KEY not found in app_shell response")
   } catch (error) {
-    console.error("Failed to retrieve InnerTube API key dynamically:", error);
-    return "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+    console.error("Failed to retrieve InnerTube API key dynamically:", error)
+    return "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
   }
 }
 
 export async function fetchVisitorData(videoId: string): Promise<string> {
-  const apiKey = await getApiKey();
-  const url = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false&ext_request=true`;
+  const apiKey = await getApiKey()
+  const url = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false&ext_request=true`
 
-  await setDNRHeadersForClient("WEB");
+  await setDNRHeadersForClient("WEB")
 
   const payload = {
     videoId: videoId,
@@ -91,7 +71,7 @@ export async function fetchVisitorData(videoId: string): Promise<string> {
         platform: "DESKTOP"
       }
     }
-  };
+  }
 
   const response = await fetch(url, {
     method: "POST",
@@ -100,40 +80,40 @@ export async function fetchVisitorData(videoId: string): Promise<string> {
     },
     body: JSON.stringify(payload),
     credentials: "include"
-  });
+  })
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch visitor data. Status: ${response.status}`);
+    throw new Error(`Failed to fetch visitor data. Status: ${response.status}`)
   }
 
-  const data = await response.json();
-  const visitorData = data.responseContext?.visitorData;
+  const data = await response.json()
+  const visitorData = data.responseContext?.visitorData
   if (visitorData) {
-    return visitorData;
+    return visitorData
   }
 
-  const trackingParams = data.responseContext?.serviceTrackingParams || [];
+  const trackingParams = data.responseContext?.serviceTrackingParams || []
   for (const item of trackingParams) {
-    const params = item.params || [];
-    const found = params.find((p: any) => p.key === "visitor_data");
+    const params = item.params || []
+    const found = params.find((p: any) => p.key === "visitor_data")
     if (found && found.value) {
-      return found.value;
+      return found.value
     }
   }
 
-  throw new Error("Unable to obtain visitorData from InnerTube API");
+  throw new Error("Unable to obtain visitorData from InnerTube API")
 }
 
 export async function fetchVideoInfo(videoId: string) {
-  let visitorData: string = "";
+  let visitorData: string = ""
   try {
-    visitorData = await fetchVisitorData(videoId);
-    console.log("Retrieved visitorData successfully:", visitorData);
+    visitorData = await fetchVisitorData(videoId)
+    console.log("Retrieved visitorData successfully:", visitorData)
   } catch (error: any) {
-    console.warn("Failed to fetch visitorData:", error.message);
+    console.warn("Failed to fetch visitorData:", error.message)
   }
 
-  const apiKey = await getApiKey();
+  const apiKey = await getApiKey()
   const clientConfigs = [
     {
       name: "ANDROID_VR" as const,
@@ -163,21 +143,21 @@ export async function fetchVideoInfo(videoId: string) {
         }
       }
     }
-  ];
+  ]
 
-  let lastError = new Error("No clients succeeded");
+  let lastError = new Error("No clients succeeded")
 
   for (const config of clientConfigs) {
     try {
-      console.log(`Attempting fetch using client: ${config.name}`);
-      await setDNRHeadersForClient(config.name);
+      console.log(`Attempting fetch using client: ${config.name}`)
+      await setDNRHeadersForClient(config.name)
 
-      const url = `https://www.youtube.com/youtubei/v1/player?key=${config.apiKey}&prettyPrint=false&ext_request=true`;
+      const url = `https://www.youtube.com/youtubei/v1/player?key=${config.apiKey}&prettyPrint=false&ext_request=true`
       const payload = {
         videoId: videoId,
         contentCheckOk: true,
         context: config.payloadContext
-      };
+      }
 
       const response = await fetch(url, {
         method: "POST",
@@ -186,52 +166,54 @@ export async function fetchVideoInfo(videoId: string) {
         },
         body: JSON.stringify(payload),
         credentials: "include"
-      });
+      })
 
       if (!response.ok) {
-        throw new Error(`HTTP Status ${response.status}`);
+        throw new Error(`HTTP Status ${response.status}`)
       }
 
-      const data = await response.json();
-      const playabilityStatus = data.playabilityStatus || {};
+      const data = await response.json()
+      const playabilityStatus = data.playabilityStatus || {}
 
       if (playabilityStatus.status !== "OK") {
-        const reason = playabilityStatus.reason || "Video unavailable";
-        throw new Error(`Playability status not OK: ${reason}`);
+        const reason = playabilityStatus.reason || "Video unavailable"
+        throw new Error(`Playability status not OK: ${reason}`)
       }
 
-      const streamingData = data.streamingData || {};
+      const streamingData = data.streamingData || {}
       if (!streamingData.formats && !streamingData.adaptiveFormats) {
-        throw new Error("No streaming formats returned in player response");
+        throw new Error("No streaming formats returned in player response")
       }
 
-      const videoDetails = data.videoDetails || {};
+      const videoDetails = data.videoDetails || {}
 
       // Extract caption tracks
-      const rawCaptions = data.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+      const rawCaptions =
+        data.captions?.playerCaptionsTracklistRenderer?.captionTracks || []
       const captionTracks = rawCaptions.map((track: any) => {
-        let name = "";
-        const nameDict = track.name || {};
+        let name = ""
+        const nameDict = track.name || {}
         if ("simpleText" in nameDict) {
-          name = nameDict.simpleText;
+          name = nameDict.simpleText
         } else if (Array.isArray(nameDict.runs)) {
-          name = nameDict.runs.map((r: any) => r.text || "").join("");
+          name = nameDict.runs.map((r: any) => r.text || "").join("")
         }
-        let code = track.vssId || track.languageCode || "";
-        code = code.replace(/^\.+|\.+$/g, "");
+        let code = track.vssId || track.languageCode || ""
+        code = code.replace(/^\.+|\.+$/g, "")
         return {
           baseUrl: track.baseUrl,
           name: name || code || "Subtitle",
           code: code || "und"
-        };
-      });
+        }
+      })
 
       // Check if signature deciphering is needed
-      const rawFormats = streamingData.formats || [];
-      const rawAdaptive = streamingData.adaptiveFormats || [];
-      const hasCipher = rawFormats.some((f: any) => f.signatureCipher || f.cipher) ||
-                        rawAdaptive.some((f: any) => f.signatureCipher || f.cipher);
-      const playerJsCode = hasCipher ? await getPlayerJsCode() : "";
+      const rawFormats = streamingData.formats || []
+      const rawAdaptive = streamingData.adaptiveFormats || []
+      const hasCipher =
+        rawFormats.some((f: any) => f.signatureCipher || f.cipher) ||
+        rawAdaptive.some((f: any) => f.signatureCipher || f.cipher)
+      const playerJsCode = hasCipher ? await getPlayerJsCode() : ""
 
       // Extract formats
       const formats = rawFormats
@@ -244,13 +226,13 @@ export async function fetchVideoInfo(videoId: string) {
           initRange: f.initRange,
           indexRange: f.indexRange
         }))
-        .filter((f: any) => !!f.url);
+        .filter((f: any) => !!f.url)
 
       const adaptiveFormats = rawAdaptive
         .map((f: any) => {
-          const audioTrack = f.audioTrack || {};
-          const rawTrackId = audioTrack.id || "";
-          const langCode = rawTrackId ? rawTrackId.split(".")[0] : undefined;
+          const audioTrack = f.audioTrack || {}
+          const rawTrackId = audioTrack.id || ""
+          const langCode = rawTrackId ? rawTrackId.split(".")[0] : undefined
           return {
             itag: f.itag,
             url: parseFormatUrl(f, playerJsCode),
@@ -265,25 +247,79 @@ export async function fetchVideoInfo(videoId: string) {
             isDefaultAudio: !!audioTrack.audioIsDefault,
             initRange: f.initRange,
             indexRange: f.indexRange
-          };
+          }
         })
-        .filter((f: any) => !!f.url);
+        .filter((f: any) => !!f.url)
+
+      // Fetch multi-language audio tracks via WEB page HTML
+      let audioLanguages:
+        { code: string; name: string; isDefault: boolean }[] | undefined
+      let hasMultiLanguageAudio = false
+      try {
+        const multiLangResult = await fetchMultiLanguageAudioTracks(videoId)
+        if (
+          multiLangResult.hasMultiLanguageAudio &&
+          multiLangResult.audioStreams.length > 0
+        ) {
+          audioLanguages = multiLangResult.languages
+          hasMultiLanguageAudio = true
+
+          // Merge multi-lang audio streams into adaptiveFormats (avoid duplicates by itag+langCode)
+          const existingAudioKeys = new Set(
+            adaptiveFormats
+              .filter((f: any) => f.mimeType?.startsWith("audio/"))
+              .map((f: any) => `${f.itag}_${f.langCode || "und"}`)
+          )
+
+          for (const mlStream of multiLangResult.audioStreams) {
+            const key = `${mlStream.itag}_${mlStream.langCode || "und"}`
+            if (!existingAudioKeys.has(key)) {
+              adaptiveFormats.push({
+                itag: mlStream.itag,
+                url: mlStream.url,
+                mimeType: mlStream.mimeType,
+                contentLength: mlStream.contentLength,
+                bitrate: mlStream.bitrate,
+                langCode: mlStream.langCode,
+                displayName: mlStream.displayName,
+                audioTrackId: mlStream.audioTrackId,
+                isDefaultAudio: mlStream.isDefaultAudio,
+                initRange: mlStream.initRange,
+                indexRange: mlStream.indexRange
+              })
+              existingAudioKeys.add(key)
+            }
+          }
+
+          console.log(
+            `Merged ${multiLangResult.audioStreams.length} multi-language audio tracks (${audioLanguages.length} languages)`
+          )
+        }
+      } catch (err: any) {
+        console.warn(
+          "Multi-language audio detection failed (non-fatal):",
+          err.message
+        )
+      }
 
       return {
         title: videoDetails.title,
         author: videoDetails.author,
         lengthSeconds: videoDetails.lengthSeconds,
-        thumbnail: videoDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        thumbnail:
+          videoDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
+          `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
         formats,
         adaptiveFormats,
-        captionTracks
-      };
+        captionTracks,
+        audioLanguages,
+        hasMultiLanguageAudio
+      }
     } catch (err: any) {
-      console.warn(`Client ${config.name} failed:`, err.message);
-      lastError = err;
+      console.warn(`Client ${config.name} failed:`, err.message)
+      lastError = err
     }
   }
 
-  throw lastError;
+  throw lastError
 }
-

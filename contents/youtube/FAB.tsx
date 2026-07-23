@@ -1,12 +1,13 @@
-import React from "react";
-import { useTheme } from "../../context/ThemeContext";
+import React from "react"
+
+import { useTheme } from "../../context/ThemeContext"
 
 interface FABProps {
-  onClick: () => void;
-  isCurrentlyDownloading: boolean;
-  currentDownloadStatus: string | null;
-  circumference: number;
-  strokeDashoffset: number;
+  onClick: () => void
+  isCurrentlyDownloading: boolean
+  currentDownloadStatus: string | null
+  circumference: number
+  strokeDashoffset: number
 }
 
 export const FAB: React.FC<FABProps> = ({
@@ -16,7 +17,7 @@ export const FAB: React.FC<FABProps> = ({
   circumference,
   strokeDashoffset
 }) => {
-  const { themeConfig } = useTheme();
+  const { themeConfig } = useTheme()
 
   return (
     <div className="fixed bottom-8 right-8 w-[84px] h-[84px] z-[999999] flex items-center justify-center font-sans">
@@ -39,8 +40,7 @@ export const FAB: React.FC<FABProps> = ({
       <button
         onClick={onClick}
         title="Download YouTube Video/Audio"
-        className={`absolute w-[68px] h-[68px] rounded-full ${themeConfig.primaryBtn} hover:scale-105 active:scale-95 text-white flex items-center justify-center cursor-pointer shadow-2xl transition-all p-0`}
-      >
+        className={`absolute w-[68px] h-[68px] rounded-full ${themeConfig.primaryBtn} hover:scale-105 active:scale-95 text-white flex items-center justify-center cursor-pointer shadow-2xl transition-all p-0`}>
         {isCurrentlyDownloading && currentDownloadStatus === "downloading" ? (
           <svg
             className="w-7 h-7 animate-spin text-white"
@@ -49,8 +49,7 @@ export const FAB: React.FC<FABProps> = ({
             stroke="currentColor"
             strokeWidth="2.5"
             strokeLinecap="round"
-            strokeLinejoin="round"
-          >
+            strokeLinejoin="round">
             <path d="M12 15V3m0 12l-4-4m4 4l4-4M5 20h14" />
           </svg>
         ) : (
@@ -61,12 +60,11 @@ export const FAB: React.FC<FABProps> = ({
             stroke="currentColor"
             strokeWidth="2.5"
             strokeLinecap="round"
-            strokeLinejoin="round"
-          >
+            strokeLinejoin="round">
             <path d="M12 15V3m0 12l-4-4m4 4l4-4M5 20h14" />
           </svg>
         )}
       </button>
     </div>
-  );
-};
+  )
+}

@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { decipherSignature } from "./decipherer";
+import { describe, expect, it } from "vitest"
+
+import { decipherSignature } from "./decipherer"
 
 describe("Decipherer Service", () => {
   it("should decipher signature using reverse, splice, and swap ops", () => {
@@ -17,17 +18,17 @@ describe("Decipherer Service", () => {
         w8.cc(a, 3);
         return a.join("");
       };
-    `;
+    `
 
-    const rawSignature = "ABCDEFGHIJ";
-    const result = decipherSignature(rawSignature, mockJsCode);
-    expect(result).not.toBe(rawSignature);
-    expect(typeof result).toBe("string");
-  });
+    const rawSignature = "ABCDEFGHIJ"
+    const result = decipherSignature(rawSignature, mockJsCode)
+    expect(result).not.toBe(rawSignature)
+    expect(typeof result).toBe("string")
+  })
 
   it("should fallback safely to original signature if decipher function is not found", () => {
-    const rawSignature = "ABCDEFGHIJ";
-    const result = decipherSignature(rawSignature, "invalid js code");
-    expect(result).toBe(rawSignature);
-  });
-});
+    const rawSignature = "ABCDEFGHIJ"
+    const result = decipherSignature(rawSignature, "invalid js code")
+    expect(result).toBe(rawSignature)
+  })
+})

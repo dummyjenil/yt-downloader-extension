@@ -1,33 +1,42 @@
-import { useEffect, useState } from "react";
-import type { VideoInfo, StreamFormat, TrimRange, CaptionTrack } from "../types/youtube";
-import { resolveDownloadParams } from "../utils/downloadHelpers";
+import { useEffect, useState } from "react"
+
+import type {
+  CaptionTrack,
+  StreamFormat,
+  TrimRange,
+  VideoInfo
+} from "../types/youtube"
+import { resolveDownloadParams } from "../utils/downloadHelpers"
 
 export function useDownloads() {
-  const [downloads, setDownloads] = useState<any[]>([]);
-  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [downloads, setDownloads] = useState<any[]>([])
+  const [historyList, setHistoryList] = useState<any[]>([])
 
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.runtime) {
       chrome.storage.local.get(["downloadHistory"], (res) => {
-        if (res.downloadHistory) setHistoryList(res.downloadHistory as any[]);
-      });
+        if (res.downloadHistory) setHistoryList(res.downloadHistory as any[])
+      })
 
-      chrome.runtime.sendMessage({ type: "GET_ACTIVE_DOWNLOADS" }, (response) => {
-        if (response && response.downloads) {
-          setDownloads(response.downloads);
+      chrome.runtime.sendMessage(
+        { type: "GET_ACTIVE_DOWNLOADS" },
+        (response) => {
+          if (response && response.downloads) {
+            setDownloads(response.downloads)
+          }
         }
-      });
+      )
 
       const listener = (message: any) => {
         if (message.type === "DOWNLOADS_UPDATED") {
-          setDownloads(message.downloads);
+          setDownloads(message.downloads)
         }
-      };
+      }
 
-      chrome.runtime.onMessage.addListener(listener);
-      return () => chrome.runtime.onMessage.removeListener(listener);
+      chrome.runtime.onMessage.addListener(listener)
+      return () => chrome.runtime.onMessage.removeListener(listener)
     }
-  }, []);
+  }, [])
 
   const handleDownload = (
     videoInfo: VideoInfo | null,
@@ -38,7 +47,7 @@ export function useDownloads() {
     selectedSubtitles?: CaptionTrack[],
     onSuccess?: () => void
   ) => {
-    if (!videoInfo) return;
+    if (!videoInfo) return
 
     const params = resolveDownloadParams(
       stream,
@@ -47,7 +56,7 @@ export function useDownloads() {
       trimRange,
       videoInfo.lengthSeconds,
       videoInfo.title
-    );
+    )
 
     if (typeof chrome !== "undefined" && chrome.runtime) {
       chrome.runtime.sendMessage({
@@ -65,23 +74,25 @@ export function useDownloads() {
         audioIndexRange: customAudioStream?.indexRange,
         trimRange: trimRange && trimRange.enabled ? trimRange : undefined,
         selectedSubtitles: selectedSubtitles
-      });
+      })
     }
 
     if (onSuccess) {
-      onSuccess();
+      onSuccess()
     }
-  };
+  }
 
   const clearHistory = () => {
     if (typeof chrome !== "undefined" && chrome.storage) {
       chrome.storage.local.set({ downloadHistory: [] }, () => {
-        setHistoryList([]);
-      });
+        setHistoryList([])
+      })
     }
-  };
+  }
 
-  const activeDownloads = downloads.filter(d => d.status === "downloading" || d.status === "paused");
+  const activeDownloads = downloads.filter(
+    (d) => d.status === "downloading" || d.status === "paused"
+  )
 
   return {
     downloads,
@@ -89,5 +100,5 @@ export function useDownloads() {
     historyList,
     handleDownload,
     clearHistory
-  };
+  }
 }
