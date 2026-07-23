@@ -13,7 +13,6 @@ pnpm test         # vitest run (no vitest.config file — uses defaults)
 ```
 
 No separate lint/typecheck scripts exist. Run manually:
-
 ```bash
 npx eslint .      # Uses eslint.config.mjs
 npx tsc --noEmit  # Type checking
@@ -21,15 +20,15 @@ npx tsc --noEmit  # Type checking
 
 ## Architecture
 
-| Layer                         | Files                                       | Role                                                                           |
-| ----------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------ |
-| **Background service worker** | `background.ts`, `background/`              | YouTube InnerTube API calls, DNR header rules, download job orchestration      |
-| **Content script**            | `contents/youtube.tsx`, `contents/youtube/` | Injected on `*.youtube.com`; renders FAB + modal overlay for stream extraction |
-| **Popup**                     | `popup.tsx`, `components/`, `hooks/`        | Extension popup: stream extractor, download dashboard, settings, history       |
-| **Download page**             | `tabs/download.tsx`, `tabs/download-*`      | Full-page download manager (opened in extension tab)                           |
-| **Playlist page**             | `tabs/playlist.tsx`, `tabs/playlist-*`      | Batch playlist downloader                                                      |
-| **FFmpeg sandbox**            | `tabs/sandbox.tsx`                          | Isolated sandboxed page running `@ffmpeg/ffmpeg` WASM (required by CSP)        |
-| **Shared utilities**          | `utils/`, `types/`, `context/`, `styles/`   | Helpers, types, theme context, global CSS                                      |
+| Layer | Files | Role |
+|-------|-------|------|
+| **Background service worker** | `background.ts`, `background/` | YouTube InnerTube API calls, DNR header rules, download job orchestration |
+| **Content script** | `contents/youtube.tsx`, `contents/youtube/` | Injected on `*.youtube.com`; renders FAB + modal overlay for stream extraction |
+| **Popup** | `popup.tsx`, `components/`, `hooks/` | Extension popup: stream extractor, download dashboard, settings, history |
+| **Download page** | `tabs/download.tsx`, `tabs/download-*` | Full-page download manager (opened in extension tab) |
+| **Playlist page** | `tabs/playlist.tsx`, `tabs/playlist-*` | Batch playlist downloader |
+| **FFmpeg sandbox** | `tabs/sandbox.tsx` | Isolated sandboxed page running `@ffmpeg/ffmpeg` WASM (required by CSP) |
+| **Shared utilities** | `utils/`, `types/`, `context/`, `styles/` | Helpers, types, theme context, global CSS |
 
 ## Key gotchas
 

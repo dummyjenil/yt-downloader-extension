@@ -1,9 +1,8 @@
-import React from "react"
-
-import { useTheme } from "../context/ThemeContext"
+import React from "react";
+import { useTheme } from "../context/ThemeContext";
 
 export const Header: React.FC = () => {
-  const { themeConfig } = useTheme()
+  const { themeConfig } = useTheme();
 
   return (
     <div className="flex items-center justify-between mb-6">
@@ -15,10 +14,9 @@ export const Header: React.FC = () => {
           YTD Premium
         </div>
       </div>
-      <div
-        className={`${themeConfig.badge} px-3 py-1 text-xs font-bold tracking-wider uppercase shadow-sm`}>
+      <div className={`${themeConfig.badge} px-3 py-1 text-xs font-bold tracking-wider uppercase shadow-sm`}>
         {themeConfig.name}
       </div>
     </div>
-  )
-}
+  );
+};

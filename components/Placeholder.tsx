@@ -1,13 +1,11 @@
-import React from "react"
-
-import { useTheme } from "../context/ThemeContext"
+import React from "react";
+import { useTheme } from "../context/ThemeContext";
 
 export const Placeholder: React.FC = () => {
-  const { themeConfig } = useTheme()
+  const { themeConfig } = useTheme();
 
   return (
-    <div
-      className={`flex flex-col items-center justify-center flex-1 py-12 px-4 text-center ${themeConfig.mutedText}`}>
+    <div className={`flex flex-col items-center justify-center flex-1 py-12 px-4 text-center ${themeConfig.mutedText}`}>
       <svg
         width="48"
         height="48"
@@ -17,7 +15,8 @@ export const Placeholder: React.FC = () => {
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={`mb-4 opacity-50 ${themeConfig.accentText}`}>
+        className={`mb-4 opacity-50 ${themeConfig.accentText}`}
+      >
         <path d="M23 7 16 12 23 17 23 7z" />
         <rect x="1" y="5" width="15" height="14" rx="3" ry="3" />
       </svg>
@@ -25,9 +24,8 @@ export const Placeholder: React.FC = () => {
         Ready to Download
       </span>
       <span className="text-xs leading-relaxed max-w-[280px]">
-        Open a YouTube video or paste a link above to fetch high-speed streams
-        locally.
+        Open a YouTube video or paste a link above to fetch high-speed streams locally.
       </span>
     </div>
-  )
-}
+  );
+};

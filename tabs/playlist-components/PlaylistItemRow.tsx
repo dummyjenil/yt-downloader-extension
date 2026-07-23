@@ -1,13 +1,12 @@
-import React from "react"
-
-import { useTheme } from "../../context/ThemeContext"
-import { formatDuration } from "../../utils/youtube"
-import type { ConfiguredPlaylistItem } from "../playlist-hooks/usePlaylistManager"
+import React from "react";
+import { useTheme } from "../../context/ThemeContext";
+import type { ConfiguredPlaylistItem } from "../playlist-hooks/usePlaylistManager";
+import { formatDuration } from "../../utils/youtube";
 
 interface PlaylistItemRowProps {
-  item: ConfiguredPlaylistItem
-  index: number
-  onUpdate: (updates: Partial<ConfiguredPlaylistItem>) => void
+  item: ConfiguredPlaylistItem;
+  index: number;
+  onUpdate: (updates: Partial<ConfiguredPlaylistItem>) => void;
 }
 
 export const PlaylistItemRow: React.FC<PlaylistItemRowProps> = ({
@@ -15,13 +14,14 @@ export const PlaylistItemRow: React.FC<PlaylistItemRowProps> = ({
   index,
   onUpdate
 }) => {
-  const { themeConfig } = useTheme()
+  const { themeConfig } = useTheme();
 
   return (
     <div
       className={`flex flex-col sm:flex-row items-start sm:items-center gap-4 ${themeConfig.card} ${themeConfig.radius} p-4 mb-3 border ${
         item.selected ? themeConfig.border : "border-transparent"
-      } shadow-md transition-all hover:border-violet-500/40`}>
+      } shadow-md transition-all hover:border-violet-500/40`}
+    >
       {/* Selection Checkbox & Index */}
       <div className="flex items-center gap-3 shrink-0">
         <input
@@ -30,8 +30,7 @@ export const PlaylistItemRow: React.FC<PlaylistItemRowProps> = ({
           onChange={(e) => onUpdate({ selected: e.target.checked })}
           className="accent-violet-500 cursor-pointer w-5 h-5 rounded"
         />
-        <span
-          className={`text-xs font-mono font-bold ${themeConfig.mutedText} w-6`}>
+        <span className={`text-xs font-mono font-bold ${themeConfig.mutedText} w-6`}>
           #{index + 1}
         </span>
       </div>
@@ -52,16 +51,11 @@ export const PlaylistItemRow: React.FC<PlaylistItemRowProps> = ({
       <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
         <div>
           <h3 className="text-sm sm:text-base font-extrabold m-0 mb-1 leading-snug line-clamp-2 text-white hover:text-violet-300 transition-colors">
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              className="no-underline text-inherit">
+            <a href={item.url} target="_blank" rel="noreferrer" className="no-underline text-inherit">
               {item.title}
             </a>
           </h3>
-          <span
-            className={`text-xs font-bold ${themeConfig.mutedText} inline-flex items-center gap-1.5`}>
+          <span className={`text-xs font-bold ${themeConfig.mutedText} inline-flex items-center gap-1.5`}>
             <span>📺 {item.author}</span>
           </span>
         </div>
@@ -96,42 +90,31 @@ export const PlaylistItemRow: React.FC<PlaylistItemRowProps> = ({
           value={item.formatOption}
           onChange={(e) => onUpdate({ formatOption: e.target.value as any })}
           disabled={!item.selected}
-          className={`w-full sm:w-36 appearance-none ${themeConfig.input} ${themeConfig.radius} px-3 py-2 text-xs font-bold outline-none cursor-pointer disabled:opacity-40`}>
-          <option value="1080p" className="bg-zinc-900 text-zinc-100">
-            1080p Full HD
-          </option>
-          <option value="720p" className="bg-zinc-900 text-zinc-100">
-            720p HD MP4
-          </option>
-          <option value="480p" className="bg-zinc-900 text-zinc-100">
-            480p SD MP4
-          </option>
-          <option value="audio" className="bg-zinc-900 text-zinc-100">
-            Audio Only (M4A)
-          </option>
+          className={`w-full sm:w-36 appearance-none ${themeConfig.input} ${themeConfig.radius} px-3 py-2 text-xs font-bold outline-none cursor-pointer disabled:opacity-40`}
+        >
+          <option value="1080p" className="bg-zinc-900 text-zinc-100">1080p Full HD</option>
+          <option value="720p" className="bg-zinc-900 text-zinc-100">720p HD MP4</option>
+          <option value="480p" className="bg-zinc-900 text-zinc-100">480p SD MP4</option>
+          <option value="audio" className="bg-zinc-900 text-zinc-100">Audio Only (M4A)</option>
         </select>
 
         {/* Status indicator */}
         {item.status === "fetching_info" && (
           <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1 animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-amber-400"></span> Fetching
-            details...
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span> Fetching details...
           </span>
         )}
         {item.status === "queued" && (
           <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Queued
-            for Download
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Queued for Download
           </span>
         )}
         {item.status === "error" && (
-          <span
-            className="text-[11px] font-bold text-rose-400"
-            title={item.errorMessage}>
+          <span className="text-[11px] font-bold text-rose-400" title={item.errorMessage}>
             ⚠️ Error: {item.errorMessage || "Failed"}
           </span>
         )}
       </div>
     </div>
-  )
-}
+  );
+};

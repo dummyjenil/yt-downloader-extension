@@ -1,14 +1,12 @@
-import React from "react"
-
-import { ThemeProvider, useTheme } from "../context/ThemeContext"
-import { PlaylistHeader } from "./playlist-components/PlaylistHeader"
-import { PlaylistItemRow } from "./playlist-components/PlaylistItemRow"
-import { usePlaylistManager } from "./playlist-hooks/usePlaylistManager"
-
-import "../styles/globals.css"
+import React from "react";
+import { ThemeProvider, useTheme } from "../context/ThemeContext";
+import { usePlaylistManager } from "./playlist-hooks/usePlaylistManager";
+import { PlaylistHeader } from "./playlist-components/PlaylistHeader";
+import { PlaylistItemRow } from "./playlist-components/PlaylistItemRow";
+import "../styles/globals.css";
 
 function PlaylistPageContent() {
-  const { themeConfig } = useTheme()
+  const { themeConfig } = useTheme();
 
   const {
     playlistId,
@@ -28,13 +26,12 @@ function PlaylistPageContent() {
     updateItem,
     applyGlobalPreset,
     startBatchDownload
-  } = usePlaylistManager()
+  } = usePlaylistManager();
 
-  const selectedCount = items.filter((i) => i.selected).length
+  const selectedCount = items.filter((i) => i.selected).length;
 
   return (
-    <div
-      className={`min-h-screen font-sans ${themeConfig.container} transition-colors duration-200 p-6 sm:p-10 box-border m-0`}>
+    <div className={`min-h-screen font-sans ${themeConfig.container} transition-colors duration-200 p-6 sm:p-10 box-border m-0`}>
       <div className="max-w-6xl mx-auto">
         {/* Navigation & Direct Input Bar */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -48,10 +45,11 @@ function PlaylistPageContent() {
           {/* Manual Playlist URL Input */}
           <form
             onSubmit={(e) => {
-              e.preventDefault()
-              if (playlistId) fetchPlaylist(playlistId)
+              e.preventDefault();
+              if (playlistId) fetchPlaylist(playlistId);
             }}
-            className="flex items-center gap-2 w-full sm:w-auto">
+            className="flex items-center gap-2 w-full sm:w-auto"
+          >
             <input
               type="text"
               placeholder="Paste Playlist URL or ID..."
@@ -62,7 +60,8 @@ function PlaylistPageContent() {
             <button
               type="submit"
               disabled={loading}
-              className={`py-2 px-4 text-xs font-bold ${themeConfig.radius} ${themeConfig.primaryBtn} cursor-pointer disabled:opacity-50`}>
+              className={`py-2 px-4 text-xs font-bold ${themeConfig.radius} ${themeConfig.primaryBtn} cursor-pointer disabled:opacity-50`}
+            >
               Load Playlist
             </button>
           </form>
@@ -70,8 +69,7 @@ function PlaylistPageContent() {
 
         {/* Loading Spinner */}
         {loading && (
-          <div
-            className={`flex flex-col items-center justify-center py-20 ${themeConfig.mutedText} font-bold text-sm`}>
+          <div className={`flex flex-col items-center justify-center py-20 ${themeConfig.mutedText} font-bold text-sm`}>
             <div className="w-10 h-10 border-4 border-white/10 border-t-violet-400 rounded-full animate-spin mb-4"></div>
             <span>Fetching YouTube Playlist Videos...</span>
           </div>
@@ -83,7 +81,8 @@ function PlaylistPageContent() {
             <div>{error}</div>
             <button
               onClick={() => playlistId && fetchPlaylist(playlistId)}
-              className={`mt-4 ${themeConfig.dangerBtn} ${themeConfig.radius} px-5 py-2 text-xs font-black cursor-pointer`}>
+              className={`mt-4 ${themeConfig.dangerBtn} ${themeConfig.radius} px-5 py-2 text-xs font-black cursor-pointer`}
+            >
               Retry
             </button>
           </div>
@@ -123,7 +122,7 @@ function PlaylistPageContent() {
         )}
       </div>
     </div>
-  )
+  );
 }
 
 export default function PlaylistPage() {
@@ -131,5 +130,5 @@ export default function PlaylistPage() {
     <ThemeProvider>
       <PlaylistPageContent />
     </ThemeProvider>
-  )
+  );
 }
